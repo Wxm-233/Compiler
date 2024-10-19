@@ -1,0 +1,5 @@
+*.DS_Store
+/build
+hello.c
+test.cpp
+a.out
