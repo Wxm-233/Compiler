@@ -17,6 +17,7 @@ public:
     virtual ~BaseAST() = default;
 
     virtual std::string toString() const = 0;
+    virtual std::string toIRString() const = 0;
 };
 
 // CompUnit 是 BaseAST
@@ -27,6 +28,7 @@ public:
     std::unique_ptr<BaseAST> func_def;
 
     std::string toString() const override;
+    std::string toIRString() const override;
 };
 
 // FuncDef 也是 BaseAST
@@ -38,6 +40,7 @@ public:
     std::unique_ptr<BaseAST> block;
 
     std::string toString() const override;
+    std::string toIRString() const override;
 };
 
 class FuncTypeAST : public BaseAST
@@ -46,6 +49,7 @@ public:
     std::string type;
 
     std::string toString() const override;
+    std::string toIRString() const override;
 };
 
 class BlockAST : public BaseAST
@@ -54,6 +58,7 @@ public:
     std::unique_ptr<BaseAST> stmt;
 
     std::string toString() const override;
+    std::string toIRString() const override;
 };
 
 class StmtAST : public BaseAST
@@ -62,4 +67,5 @@ public:
     int INT_CONST;
 
     std::string toString() const override;
+    std::string toIRString() const override;
 };

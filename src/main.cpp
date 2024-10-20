@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <cstring>
 #include "ast.h"
 
 using namespace std;
@@ -32,7 +33,13 @@ int main(int argc, const char *argv[]) {
   auto ret = yyparse(ast);
   assert(!ret);
 
+  // 打开输出文件, 并且指定输出流到这个文件
+  freopen(output, "w", stdout);
+
   // 输出解析得到的 AST, 其实就是个字符串
-  cout << ast->toString() << endl;
+  if (strcmp(mode, "-koopa") == 0)
+    cout << ast->toIRString() << endl;
+  else
+    cout << ast->toString() << endl;
   return 0;
 }
