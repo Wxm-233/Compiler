@@ -1,17 +1,5 @@
 #include "ast.h"
 
-std::string BaseAST::toString() const
-{
-    return "";
-    // BaseAST does not have any specific content to string
-}
-
-std::string BaseAST::toIRString() const
-{
-    return "";
-    // BaseAST does not have any specific content to string
-}
-
 std::string CompUnitAST::toString() const
 {
     return "CompUnitAST { " + func_def->toString() + " } ";
@@ -64,4 +52,23 @@ std::string StmtAST::toString() const
 std::string StmtAST::toIRString() const
 {
     return "    ret " + std::to_string(INT_CONST) + "\n";
+}
+
+std::string ExpAST::toIRString() const
+{
+    return unary_exp->toIRString();
+}
+
+std::string UnaryExpAST::toIRString() const
+{
+    if (is_primary_exp) {
+        return primary_exp->toIRString();
+    } else {
+        switch (unaryop) {
+            case '+':
+                return unary_exp->toIRString();
+            case '-':
+                return "    %sub = sub 0, " + unary_exp->toIRString() + "\n";
+        }
+    }
 }

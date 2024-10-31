@@ -32,17 +32,20 @@ using namespace std;
 %union {
   std::string *str_val;
   int int_val;
+  char char_val;
   BaseAST *ast_val;
 }
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
 %token INT RETURN
-%token <str_val> IDENT
+%token LAND LOR 
+%token <str_val> IDENT TYPE RELOP EQOP
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt
+%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp 
+%type <char_val> UnaryOp MulOp AddOp
 %type <int_val> Number
 
 %%
@@ -98,18 +101,56 @@ Block
   ;
 
 Stmt
-  : RETURN Number ';' {
+  : RETURN Exp ';' {
     auto ast = new StmtAST();
     ast->INT_CONST = $2;
     $$ = ast;
   }
   ;
 
+Exp
+  : UnaryExp {
+    $$ = $1;
+  }
+  ;
+
+PrimaryExp
+  : "(" Exp ")" {
+    auto ast = new PrimaryExpAST();
+    ast->exp = unique_ptr<BaseAST>($2);
+    ast->is_number = false;
+    $$ = ast;
+  }
+  |
+  Number {
+    auto ast = new PrimaryExpAST();
+    ast->number = $1;
+    ast->is_number = true;
+    $$ = ast;
+  }
+
 Number
   : INT_CONST {
     $$ = $1;
   }
   ;
+
+UnaryExp
+  : PrimaryExp {
+    $$ = $1;
+  }
+  |
+  UnaryOp UnaryExp {
+    auto ast = new UnaryExpAST();
+    ast->op = $1;
+    ast->unary_exp = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+
+UnaryOp
+  : "+" | "-" | "!" {
+    $$ = $1;
+  }
 
 %%
 

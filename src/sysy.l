@@ -28,6 +28,10 @@ Decimal       [1-9][0-9]*
 Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
+/* 比较运算符 */
+RelOp         [<>]=?
+EqOp          [!=]=
+
 %%
 
 {WhiteSpace}    { /* 忽略, 不做任何操作 */ }
@@ -36,6 +40,11 @@ Hexadecimal   0[xX][0-9a-fA-F]+
 
 "int"           { return INT; }
 "return"        { return RETURN; }
+
+{RelOp}         { return RELOP; }
+{EqOp}          { return EQOP; }
+"&&"            { return LAND; }
+"||"            { return LOR; }
 
 {Identifier}    { yylval.str_val = new string(yytext); return IDENT; }
 
