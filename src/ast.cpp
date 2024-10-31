@@ -23,7 +23,7 @@ void *FuncDefAST::toRaw() const
     ty->tag = KOOPA_RTT_FUNCTION;
     ty->data.function.params.buffer = nullptr;
     ty->data.function.params.len = 0;
-    ty->data.function.params.kind = KOOPA_RSIK_VALUE;
+    ty->data.function.params.kind = KOOPA_RSIK_TYPE;
     ty->data.function.ret = (koopa_raw_type_t)func_type->toRaw();
 
     raw_function->ty = ty;
@@ -35,7 +35,8 @@ void *FuncDefAST::toRaw() const
     raw_function->name = name;
 
     raw_function->params.len = 0;
-    raw_function->params.buffer = new const void*[raw_function->params.len];
+    //raw_function->params.buffer = new const void*[raw_function->params.len];
+    raw_function->params.buffer = nullptr;
     raw_function->params.kind = KOOPA_RSIK_VALUE;
 
     raw_function->bbs.len = 1;
@@ -78,11 +79,17 @@ void *BlockAST::toRaw() const
 
     raw_block->insts.kind = KOOPA_RSIK_VALUE;
     auto insts_vec = (std::vector<koopa_raw_value_data*>*) stmt->toRaw();
-    raw_block->insts.len = insts_vec->size();
-    raw_block->insts.buffer = new const void*[raw_block->insts.len];
     int index = 0;
     for (auto inst : *insts_vec) {
-        raw_block->insts.buffer[index++] = inst;
+        if (inst->kind.tag != KOOPA_RVT_INTEGER)
+            index++;
+    }
+    raw_block->insts.len = index;
+    raw_block->insts.buffer = new const void*[raw_block->insts.len];
+    index = 0;
+    for (auto inst: *insts_vec) {
+        if (inst->kind.tag != KOOPA_RVT_INTEGER)
+            raw_block->insts.buffer[index++] = inst;
     }
 
     return raw_block;
@@ -98,6 +105,10 @@ void *StmtAST::toRaw() const
 
     raw_stmt->name = nullptr;
 
+    raw_stmt->used_by.buffer = nullptr;
+    raw_stmt->used_by.kind = KOOPA_RSIK_VALUE;
+    raw_stmt->used_by.len = 0;
+
     raw_stmt->kind.tag = KOOPA_RVT_RETURN;
 
     auto insts = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
@@ -109,6 +120,7 @@ void *StmtAST::toRaw() const
     value->used_by.len = 1;
     value->used_by.buffer = new const void*[1];
     value->used_by.buffer[0] = raw_stmt;
+    value->used_by.kind = KOOPA_RSIK_VALUE;
 
     raw_stmt->kind.data.ret.value = value;
 
@@ -149,6 +161,11 @@ void *UnaryExpAST::toRaw() const
     if (is_primary_exp) {
         return primary_exp->toRaw();
     }
+
+    if (unaryop == '+') {
+        return unary_exp->toRaw();
+    }
+
     auto raw = new koopa_raw_value_data_t;
 
     auto ty = new koopa_raw_type_kind_t;
@@ -159,9 +176,6 @@ void *UnaryExpAST::toRaw() const
 
     raw->kind.tag = KOOPA_RVT_BINARY;
     switch (unaryop) {
-    case '+':
-        raw->kind.data.binary.op = KOOPA_RBO_ADD;
-        break;
     case '-':
         raw->kind.data.binary.op = KOOPA_RBO_SUB;
         break;
@@ -179,6 +193,11 @@ void *UnaryExpAST::toRaw() const
     zero->kind.tag = KOOPA_RVT_INTEGER;
     zero->kind.data.integer.value = 0;
 
+    zero->used_by.kind = KOOPA_RSIK_VALUE;
+    zero->used_by.len = 1;
+    zero->used_by.buffer = new const void*[zero->used_by.len];
+    zero->used_by.buffer[0] = raw;
+
     raw->kind.data.binary.lhs = zero;
 
     auto insts = (std::vector<koopa_raw_value_data*>*)unary_exp->toRaw();
@@ -191,6 +210,7 @@ void *UnaryExpAST::toRaw() const
     value->used_by.len = 1;
     value->used_by.buffer = new const void*[1];
     value->used_by.buffer[0] = raw;
+    value->used_by.kind = KOOPA_RSIK_VALUE;
 
     insts->push_back(raw);
 

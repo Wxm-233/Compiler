@@ -29,9 +29,7 @@ Octal         0[0-7]*
 Hexadecimal   0[xX][0-9a-fA-F]+
 
 /* 比较运算符 */
-RelOp         [<>]=?
-EqOp          [!=]=
-UnaryOp       [!-=]
+UnaryOp       [\-!+]
 
 %%
 
@@ -41,13 +39,6 @@ UnaryOp       [!-=]
 
 "int"           { return INT; }
 "return"        { return RETURN; }
-
-/*
-{RelOp}         { return RELOP; }
-{EqOp}          { return EQOP; }
-"&&"            { return LAND; }
-"||"            { return LOR; }
-*/
 
 {UnaryOp}       { yylval.char_val = yytext[0]; return UNARYOP; }
 

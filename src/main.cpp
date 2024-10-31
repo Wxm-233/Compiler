@@ -41,6 +41,7 @@ int main(int argc, const char *argv[])
 	auto raw_program = (koopa_raw_program_t*)(ast->toRaw());
 	koopa_program_t program;
 	koopa_error_code_t ret = koopa_generate_raw_to_koopa(raw_program, &program);
+	// std::cout << (int)ret << std::endl;
 	assert(ret == KOOPA_EC_SUCCESS);
 
 	if (std::string(mode) == "-koopa")
