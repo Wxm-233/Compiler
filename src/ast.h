@@ -3,6 +3,9 @@
 #include <string>
 #include <memory>
 #include <iostream>
+#include <cassert>
+#include "koopa.h"
+
 class BaseAST;
 class CompUnitAST;
 class FuncDefAST;
@@ -19,8 +22,6 @@ class BaseAST
 public:
     virtual ~BaseAST() = default;
 
-    virtual std::string toString() const = 0;
-    virtual std::string toIRString() const = 0;
     virtual void* toRaw() const = 0;
 };
 
@@ -31,8 +32,6 @@ public:
     // 用智能指针管理对象
     std::unique_ptr<BaseAST> func_def;
 
-    std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -44,8 +43,6 @@ public:
     std::string ident;
     std::unique_ptr<BaseAST> block;
 
-    std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -54,8 +51,6 @@ class FuncTypeAST : public BaseAST
 public:
     std::string type;
 
-    std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -64,8 +59,6 @@ class BlockAST : public BaseAST
 public:
     std::unique_ptr<BaseAST> stmt;
 
-    std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -74,8 +67,6 @@ class StmtAST : public BaseAST
 public:
     int INT_CONST;
 
-    std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -84,8 +75,6 @@ class ExpAST : public BaseAST
 public:
     std::unique_ptr<BaseAST> unary_exp;
 
-    // std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -96,8 +85,6 @@ public:
     std::unique_ptr<BaseAST> exp;
     int number;
 
-    // std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };
 
@@ -109,7 +96,5 @@ public:
     char unaryop;
     std::unique_ptr<BaseAST> unary_exp; 
 
-    // std::string toString() const override;
-    std::string toIRString() const override;
     void* toRaw() const override;
 };

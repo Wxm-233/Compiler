@@ -1,74 +1,56 @@
 #include "ast.h"
 
-std::string CompUnitAST::toString() const
+void *CompUnitAST::toRaw() const
 {
-    return "CompUnitAST { " + func_def->toString() + " } ";
+    auto raw_program = new koopa_raw_program_t;
+
+    raw_program->values.buffer = nullptr;
+    raw_program->values.len = 0;
+    raw_program->values.kind = KOOPA_RSIK_VALUE;
+
+    raw_program->funcs.len = 1;
+    raw_program->funcs.buffer = new const void*[raw_program->funcs.len];
+    raw_program->funcs.kind = KOOPA_RSIK_FUNCTION;
+    raw_program->funcs.buffer[0] = func_def->toRaw();
 }
 
-std::string CompUnitAST::toIRString() const
+void *FuncDefAST::toRaw() const
 {
-    return func_def->toIRString();
+    auto raw = new koopa_raw_function_data_t;
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_FUNCTION;
+    ty->data.function.params.buffer = nullptr;
+    ty->data.function.params.len = 0;
+    ty->data.function.params.kind = KOOPA_RSIK_VALUE;
+    ty->data.function.ret = (koopa_raw_type_t)func_type->toRaw();
+
+    raw->ty = ty;
+
+    auto name = new char[ident.size() + 2];
+    name[0] = '@';
+    std::copy(ident.begin(), ident.end(), name + 1);
+    name[ident.size() + 1] = '\0';
+    raw->name = name;
+
+    raw->params.len = 0;
+    raw->params.buffer = new void*[raw->params.len];
 }
 
-std::string FuncDefAST::toString() const
+void *FuncTypeAST::toRaw() const
 {
-    return "FuncDefAST { " + func_type->toString() + ", " + ident + ", " + block->toString() + " } ";
-}
-
-std::string FuncDefAST::toIRString() const
-{
-    return "fun @" + ident + "(): " + func_type->toIRString() + " {\n" + block->toIRString() + "}\n";
-}
-
-std::string FuncTypeAST::toString() const
-{
-    return "FuncTypeAST { " + type + " }";
-}
-
-std::string FuncTypeAST::toIRString() const
-{
-    if (type == "int") {
-        return "i32";
-    } else {
-        return "void";
+    auto ty = new koopa_raw_type_kind_t;
+    if (type == "void")
+    {
+        ty->tag = KOOPA_RTT_UNIT;
     }
-}
-
-std::string BlockAST::toString() const
-{
-    return "BlockAST { " + stmt->toString() + " } ";
-}
-
-std::string BlockAST::toIRString() const
-{
-    return "%entry:\n" + stmt->toIRString();
-}
-
-std::string StmtAST::toString() const
-{
-    return "StmtAST { " + std::to_string(INT_CONST) + " } ";
-}
-
-std::string StmtAST::toIRString() const
-{
-    return "    ret " + std::to_string(INT_CONST) + "\n";
-}
-
-std::string ExpAST::toIRString() const
-{
-    return unary_exp->toIRString();
-}
-
-std::string UnaryExpAST::toIRString() const
-{
-    if (is_primary_exp) {
-        return primary_exp->toIRString();
-    } else {
-        switch (unaryop) {
-            case '+':
-                return unary_exp->toIRString();
-            case '-':
-                return "    %sub = sub 0, " + unary_exp->toIRString() + "\n";
-        }
+    else if (type == "int")
+    {
+        ty->tag = KOOPA_RTT_INT32;
     }
+    else
+    {
+        assert(false);
+    }
+    
+    return ty;
 }
