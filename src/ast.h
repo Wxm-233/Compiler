@@ -4,6 +4,7 @@
 #include <memory>
 #include <iostream>
 #include <cassert>
+#include <vector>
 #include "koopa.h"
 
 class BaseAST;
@@ -65,7 +66,7 @@ public:
 class StmtAST : public BaseAST
 {
 public:
-    int INT_CONST;
+    std::unique_ptr<BaseAST> exp;
 
     void* toRaw() const override;
 };

@@ -32,25 +32,31 @@ int main(int argc, const char *argv[])
 
 	// 调用 parser 函数, parser 函数会进一步调用 lexer 解析输入文件的
 	std::unique_ptr<BaseAST> ast;
-	auto ret = yyparse(ast);
-	assert(!ret);
+	auto retval = yyparse(ast);
+	assert(!retval);
 
 	// 打开输出文件, 并且指定输出流到这个文件
 	freopen(output, "w", stdout);
 
-	std::string str = ast->toIRString();
+	auto raw_program = (koopa_raw_program_t*)(ast->toRaw());
+	koopa_program_t program;
+	koopa_error_code_t ret = koopa_generate_raw_to_koopa(raw_program, &program);
+	assert(ret == KOOPA_EC_SUCCESS);
 
-	// 输出解析得到的 AST, 其实就是个字符串
 	if (std::string(mode) == "-koopa")
 	{
-		std::cout << str << std::endl;
+		// 生成 Koopa IR 字符串
+		koopa_error_code_t ret = koopa_dump_to_stdout(program);
+		assert(ret == KOOPA_EC_SUCCESS);
+	}
+	else if (std::string(mode) == "-llvm")
+	{
+		// 生成 LLVM IR 字符串
+		koopa_error_code_t ret = koopa_dump_llvm_to_stdout(program);
+		assert(ret == KOOPA_EC_SUCCESS);
 	}
 	else if (std::string(mode) == "-riscv")
 	{
-		// 解析字符串 str, 得到 Koopa IR 程序
-		koopa_program_t program;
-		koopa_error_code_t ret = koopa_parse_from_string(str.c_str(), &program);
-		assert(ret == KOOPA_EC_SUCCESS); // 确保解析时没有出错
 		// 创建一个 raw program builder, 用来构建 raw program
 		koopa_raw_program_builder_t builder = koopa_new_raw_program_builder();
 		// 将 Koopa IR 程序转换为 raw program

@@ -8,3 +8,5 @@ out
 out.
 test.exe
 .vscode
+*.sh
+.devcontainer
