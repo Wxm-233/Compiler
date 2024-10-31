@@ -131,7 +131,7 @@ void *StmtAST::toRaw() const
 
 void *ExpAST::toRaw() const
 {
-    return unary_exp->toRaw();
+    return add_exp->toRaw();
 }
 
 void *PrimaryExpAST::toRaw() const
@@ -182,6 +182,8 @@ void *UnaryExpAST::toRaw() const
     case '!':
         raw->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
         break;
+    default:
+        assert(false);
     }
 
     auto zero = new koopa_raw_value_data_t;
@@ -217,3 +219,121 @@ void *UnaryExpAST::toRaw() const
     return insts;
 }
 
+void *MulExpAST::toRaw() const
+{
+    if (is_unary_exp) {
+        return unary_exp->toRaw();
+    }
+    auto raw = new koopa_raw_value_data_t;
+
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_INT32;
+    raw->ty = ty;
+
+    raw->name = nullptr;
+
+    raw->kind.tag = KOOPA_RVT_BINARY;
+    switch (op)
+    {
+    case '*':
+        raw->kind.data.binary.op = KOOPA_RBO_MUL;
+        break;
+    case '/':
+        raw->kind.data.binary.op = KOOPA_RBO_DIV;
+        break;
+    case '%':
+        raw->kind.data.binary.op = KOOPA_RBO_MOD;
+        break;
+    default:
+        assert(false);
+    }
+
+    auto left_insts = (std::vector<koopa_raw_value_data*>*)mul_exp->toRaw();
+    assert(left_insts->size() > 0);
+
+    auto left_value = *left_insts->rbegin();
+
+    left_value->used_by.len = 1;
+    left_value->used_by.buffer = new const void*[1];
+    left_value->used_by.buffer[0] = raw;
+    left_value->used_by.kind = KOOPA_RSIK_VALUE;
+
+    raw->kind.data.binary.lhs = left_value;
+
+    auto right_insts = (std::vector<koopa_raw_value_data*>*)unary_exp->toRaw();
+    assert(right_insts->size() > 0);
+
+    auto right_value = *right_insts->rbegin();
+
+    right_value->used_by.len = 1;
+    right_value->used_by.buffer = new const void*[1];
+    right_value->used_by.buffer[0] = raw;
+    right_value->used_by.kind = KOOPA_RSIK_VALUE;
+
+    raw->kind.data.binary.rhs = right_value;
+    
+    for (auto inst : *right_insts) {
+        left_insts->push_back(inst);
+    }
+    left_insts->push_back(raw);
+
+    return left_insts;
+}
+
+void *AddExpAST::toRaw() const
+{
+    if (is_mul_exp) {
+        return mul_exp->toRaw();
+    }
+    auto raw = new koopa_raw_value_data_t;
+
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_INT32;
+    raw->ty = ty;
+
+    raw->name = nullptr;
+
+    raw->kind.tag = KOOPA_RVT_BINARY;
+    switch (op)
+    {
+    case '+':
+        raw->kind.data.binary.op = KOOPA_RBO_ADD;
+        break;
+    case '-':
+        raw->kind.data.binary.op = KOOPA_RBO_SUB;
+        break;
+    default:
+        assert(false);
+    }
+
+    auto left_insts = (std::vector<koopa_raw_value_data*>*)add_exp->toRaw();
+    assert(left_insts->size() > 0);
+
+    auto left_value = *left_insts->rbegin();
+
+    left_value->used_by.len = 1;
+    left_value->used_by.buffer = new const void*[1];
+    left_value->used_by.buffer[0] = raw;
+    left_value->used_by.kind = KOOPA_RSIK_VALUE;
+
+    raw->kind.data.binary.lhs = left_value;
+
+    auto right_insts = (std::vector<koopa_raw_value_data*>*)mul_exp->toRaw();
+    assert(right_insts->size() > 0);
+
+    auto right_value = *right_insts->rbegin();
+
+    right_value->used_by.len = 1;
+    right_value->used_by.buffer = new const void*[1];
+    right_value->used_by.buffer[0] = raw;
+    right_value->used_by.kind = KOOPA_RSIK_VALUE;
+
+    raw->kind.data.binary.rhs = right_value;
+    
+    for (auto inst : *right_insts) {
+        left_insts->push_back(inst);
+    }
+    left_insts->push_back(raw);
+
+    return left_insts;
+}

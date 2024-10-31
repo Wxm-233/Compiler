@@ -74,7 +74,7 @@ public:
 class ExpAST : public BaseAST
 {
 public:
-    std::unique_ptr<BaseAST> unary_exp;
+    std::unique_ptr<BaseAST> add_exp;
 
     void* toRaw() const override;
 };
@@ -96,6 +96,28 @@ public:
     std::unique_ptr<BaseAST> primary_exp;
     char unaryop;
     std::unique_ptr<BaseAST> unary_exp; 
+
+    void* toRaw() const override;
+};
+
+class MulExpAST : public BaseAST
+{
+public:
+    bool is_unary_exp;
+    std::unique_ptr<BaseAST> unary_exp;
+    char op;
+    std::unique_ptr<BaseAST> mul_exp;
+
+    void* toRaw() const override;
+};
+
+class AddExpAST : public BaseAST
+{
+public:
+    bool is_mul_exp;
+    std::unique_ptr<BaseAST> mul_exp;
+    char op;
+    std::unique_ptr<BaseAST> add_exp;
 
     void* toRaw() const override;
 };
