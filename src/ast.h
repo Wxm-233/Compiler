@@ -74,7 +74,7 @@ public:
 class ExpAST : public BaseAST
 {
 public:
-    std::unique_ptr<BaseAST> add_exp;
+    std::unique_ptr<BaseAST> lor_exp;
 
     void* toRaw() const override;
 };
@@ -120,4 +120,46 @@ public:
     std::unique_ptr<BaseAST> add_exp;
 
     void* toRaw() const override;
+};
+
+class RelExpAST : public BaseAST
+{
+public:
+    bool is_add_exp;
+    std::unique_ptr<BaseAST> add_exp;
+    std::string op;
+    std::unique_ptr<BaseAST> rel_exp;
+
+    void* toRaw() const override;
+};
+
+class EqExpAST : public BaseAST
+{
+public:
+    bool is_rel_exp;
+    std::unique_ptr<BaseAST> rel_exp;
+    std::string op;
+    std::unique_ptr<BaseAST> eq_exp;
+
+    void* toRaw() const override;
+};
+
+class LAndExpAST : public BaseAST
+{
+public:
+    bool is_eq_exp;
+    std::unique_ptr<BaseAST> eq_exp;
+    std::unique_ptr<BaseAST> land_exp;
+
+    void* toRaw() const override;
+};
+
+class LOrExpAST : public BaseAST
+{
+public:
+    bool is_land_exp;
+    std::unique_ptr<BaseAST> land_exp;
+    std::unique_ptr<BaseAST> lor_exp;
+
+    void *toRaw() const override;
 };

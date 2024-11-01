@@ -38,12 +38,13 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN
-%token <str_val> IDENT
+%token INT RETURN LAND LOR
+%token <str_val> IDENT RELOP EQOP
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
 %type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp MulExp AddExp
+%type <ast_val> RelExp EqExp LAndExp LOrExp
 %type <int_val> Number
 %type <char_val> UnaryOp MulOp AddOp
 
@@ -108,9 +109,9 @@ Stmt
   ;
 
 Exp
-  : AddExp {
+  : LOrExp {
     auto ast = new ExpAST();
-    ast->add_exp = unique_ptr<BaseAST>($1);
+    ast->lor_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
@@ -221,7 +222,73 @@ AddExp
     ast->mul_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
+  ;
 
+RelExp
+  : AddExp {
+    auto ast = new RelExpAST();
+    ast->is_add_exp = true;
+    ast->add_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | RelExp RELOP AddExp {
+    auto ast = new RelExpAST();
+    ast->is_add_exp = false;
+    ast->rel_exp = unique_ptr<BaseAST>($1);
+    ast->op = *unique_ptr<std::string>($2);
+    ast->add_exp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+EqExp
+  : RelExp {
+    auto ast = new EqExpAST();
+    ast->is_rel_exp = true;
+    ast->rel_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | EqExp EQOP RelExp {
+    auto ast = new EqExpAST();
+    ast->is_rel_exp = false;
+    ast->eq_exp = unique_ptr<BaseAST>($1);
+    ast->op = *unique_ptr<std::string>($2);
+    ast->rel_exp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+LAndExp
+  : EqExp {
+    auto ast = new LAndExpAST();
+    ast->is_eq_exp = true;
+    ast->eq_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | LAndExp LAND EqExp {
+    auto ast = new LAndExpAST();
+    ast->is_eq_exp = false;
+    ast->land_exp = unique_ptr<BaseAST>($1);
+    ast->eq_exp = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+LOrExp
+  : LAndExp {
+    auto ast = new LOrExpAST();
+    ast->is_land_exp = true;
+    ast->land_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | LOrExp LOR LAndExp {
+    auto ast = new LOrExpAST();
+    ast->is_land_exp = false;
+    ast->lor_exp = unique_ptr<BaseAST>($1);
+    ast->land_exp = unique_ptr<BaseAST> ($3);
+    $$ = ast;
+  }
+  ;
 %%
 
 // 定义错误处理函数, 其中第二个参数是错误信息
