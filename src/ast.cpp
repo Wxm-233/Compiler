@@ -455,45 +455,115 @@ void *LAndExpAST::toRaw() const
     if (is_eq_exp) {
         return eq_exp->toRaw();
     }
-    auto raw = new koopa_raw_value_data_t;
+    auto raw_exp = new koopa_raw_value_data_t;
 
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
+    raw_exp->ty = ty;
 
-    raw->name = nullptr;
+    raw_exp->name = nullptr;
 
-    raw->kind.tag = KOOPA_RVT_BINARY;
-    raw->kind.data.binary.op = KOOPA_RBO_AND;
+    raw_exp->kind.tag = KOOPA_RVT_BINARY;
+    raw_exp->kind.data.binary.op = KOOPA_RBO_AND;
 
     auto left_insts = (std::vector<koopa_raw_value_data*>*)land_exp->toRaw();
     assert(left_insts->size() > 0);
 
     auto left_value = *left_insts->rbegin();
 
-    left_value->used_by.len = 1;
-    left_value->used_by.buffer = new const void*[1];
-    left_value->used_by.buffer[0] = raw;
-    left_value->used_by.kind = KOOPA_RSIK_VALUE;
+    auto raw_left = new koopa_raw_value_data_t;
+    raw_left->used_by.len = 1;
+    raw_left->used_by.buffer = new const void*[1];
+    raw_left->used_by.buffer[0] = raw_exp;
+    raw_left->used_by.kind = KOOPA_RSIK_VALUE;
 
-    raw->kind.data.binary.lhs = left_value;
+    auto ty_left = new koopa_raw_type_kind_t;
+    ty_left->tag = KOOPA_RTT_INT32;
+    raw_left->ty = ty_left;
+
+    raw_left->name = nullptr;
+
+    raw_left->kind.tag = KOOPA_RVT_BINARY;
+    raw_left->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+
+    auto zero_left = new koopa_raw_value_data_t;
+    auto zero_left_ty = new koopa_raw_type_kind_t;
+    zero_left_ty->tag = KOOPA_RTT_INT32;
+    zero_left->ty = zero_left_ty;
+
+    zero_left->name = nullptr;
+    zero_left->kind.tag = KOOPA_RVT_INTEGER;
+    zero_left->kind.data.integer.value = 0;
+
+    zero_left->used_by.kind = KOOPA_RSIK_VALUE;
+    zero_left->used_by.len = 1;
+    zero_left->used_by.buffer = new const void*[zero_left->used_by.len];
+    zero_left->used_by.buffer[0] = raw_left;
+
+    raw_left->kind.data.binary.lhs = zero_left;
+
+    raw_left->kind.data.binary.rhs = left_value;
+
+    left_value->used_by.kind = KOOPA_RSIK_VALUE;
+    left_value->used_by.len = 1;
+    left_value->used_by.buffer = new const void*[zero_left->used_by.len];
+    left_value->used_by.buffer[0] = raw_left;
+
+    left_insts->push_back(raw_left);
+
+    raw_exp->kind.data.binary.lhs = raw_left;
 
     auto right_insts = (std::vector<koopa_raw_value_data*>*)eq_exp->toRaw();
     assert(right_insts->size() > 0);
 
     auto right_value = *right_insts->rbegin();
 
-    right_value->used_by.len = 1;
-    right_value->used_by.buffer = new const void*[1];
-    right_value->used_by.buffer[0] = raw;
-    right_value->used_by.kind = KOOPA_RSIK_VALUE;
+    auto raw_right = new koopa_raw_value_data_t;
+    raw_right->used_by.len = 1;
+    raw_right->used_by.buffer = new const void*[1];
+    raw_right->used_by.buffer[0] = raw_exp;
+    raw_right->used_by.kind = KOOPA_RSIK_VALUE;
 
-    raw->kind.data.binary.rhs = right_value;
+    auto ty_right = new koopa_raw_type_kind_t;
+    ty_right->tag = KOOPA_RTT_INT32;
+    raw_right->ty = ty_right;
+
+    raw_right->name = nullptr;
+
+    raw_right->kind.tag = KOOPA_RVT_BINARY;
+    raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+
+    auto zero_right = new koopa_raw_value_data_t;
+    auto zero_right_ty = new koopa_raw_type_kind_t;
+    zero_right_ty->tag = KOOPA_RTT_INT32;
+    zero_right->ty = zero_right_ty;
+
+    zero_right->name = nullptr;
+    zero_right->kind.tag = KOOPA_RVT_INTEGER;
+    zero_right->kind.data.integer.value = 0;
+
+    zero_right->used_by.kind = KOOPA_RSIK_VALUE;
+    zero_right->used_by.len = 1;
+    zero_right->used_by.buffer = new const void*[zero_right->used_by.len];
+    zero_right->used_by.buffer[0] = raw_right;
+
+    raw_right->kind.data.binary.lhs = zero_right;
+
+    raw_right->kind.data.binary.rhs = right_value;
+
+    right_value->used_by.kind = KOOPA_RSIK_VALUE;
+    right_value->used_by.len = 1;
+    right_value->used_by.buffer = new const void*[zero_right->used_by.len];
+    right_value->used_by.buffer[0] = raw_right;
+
+    right_insts->push_back(raw_right);
+
+    raw_exp->kind.data.binary.rhs = raw_right;
     
     for (auto inst : *right_insts) {
         left_insts->push_back(inst);
     }
-    left_insts->push_back(raw);
+    left_insts->push_back(raw_exp);
 
     return left_insts;
 }
@@ -503,16 +573,16 @@ void *LOrExpAST::toRaw() const
     if (is_land_exp) {
         return land_exp->toRaw();
     }
-    auto raw = new koopa_raw_value_data_t;
+    auto raw_exp = new koopa_raw_value_data_t;
 
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
+    raw_exp->ty = ty;
 
-    raw->name = nullptr;
+    raw_exp->name = nullptr;
 
-    raw->kind.tag = KOOPA_RVT_BINARY;
-    raw->kind.data.binary.op = KOOPA_RBO_OR;
+    raw_exp->kind.tag = KOOPA_RVT_BINARY;
+    raw_exp->kind.data.binary.op = KOOPA_RBO_OR;
 
     auto left_insts = (std::vector<koopa_raw_value_data*>*)lor_exp->toRaw();
     assert(left_insts->size() > 0);
@@ -521,10 +591,10 @@ void *LOrExpAST::toRaw() const
 
     left_value->used_by.len = 1;
     left_value->used_by.buffer = new const void*[1];
-    left_value->used_by.buffer[0] = raw;
+    left_value->used_by.buffer[0] = raw_exp;
     left_value->used_by.kind = KOOPA_RSIK_VALUE;
 
-    raw->kind.data.binary.lhs = left_value;
+    raw_exp->kind.data.binary.lhs = left_value;
 
     auto right_insts = (std::vector<koopa_raw_value_data*>*)land_exp->toRaw();
     assert(right_insts->size() > 0);
@@ -533,14 +603,50 @@ void *LOrExpAST::toRaw() const
 
     right_value->used_by.len = 1;
     right_value->used_by.buffer = new const void*[1];
-    right_value->used_by.buffer[0] = raw;
+    right_value->used_by.buffer[0] = raw_exp;
     right_value->used_by.kind = KOOPA_RSIK_VALUE;
 
-    raw->kind.data.binary.rhs = right_value;
+    raw_exp->kind.data.binary.rhs = right_value;
     
     for (auto inst : *right_insts) {
         left_insts->push_back(inst);
     }
+    left_insts->push_back(raw_exp);
+
+    auto raw = new koopa_raw_value_data_t;
+
+    auto ty2 = new koopa_raw_type_kind_t;
+    ty2->tag = KOOPA_RTT_INT32;
+    raw->ty = ty2;
+
+    raw->name = nullptr;
+
+    raw->kind.tag = KOOPA_RVT_BINARY;
+    raw->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+
+    auto zero = new koopa_raw_value_data_t;
+    auto zero_ty = new koopa_raw_type_kind_t;
+    zero_ty->tag = KOOPA_RTT_INT32;
+    zero->ty = zero_ty;
+
+    zero->name = nullptr;
+    zero->kind.tag = KOOPA_RVT_INTEGER;
+    zero->kind.data.integer.value = 0;
+
+    zero->used_by.kind = KOOPA_RSIK_VALUE;
+    zero->used_by.len = 1;
+    zero->used_by.buffer = new const void*[zero->used_by.len];
+    zero->used_by.buffer[0] = raw;
+
+    raw->kind.data.binary.lhs = zero;
+
+    raw_exp->used_by.kind = KOOPA_RSIK_VALUE;
+    raw_exp->used_by.len = 1;
+    raw_exp->used_by.buffer = new const void*[1];
+    raw_exp->used_by.buffer[0] = raw;
+
+    raw->kind.data.binary.rhs = raw_exp;
+
     left_insts->push_back(raw);
 
     return left_insts;
