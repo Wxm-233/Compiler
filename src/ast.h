@@ -24,6 +24,8 @@ public:
     virtual ~BaseAST() = default;
 
     virtual void* toRaw() const = 0;
+
+    const static koopa_raw_value_data_t* make_zero(koopa_raw_value_data_t* raw);
 };
 
 // CompUnit 是 BaseAST

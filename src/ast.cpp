@@ -1,5 +1,24 @@
 #include "ast.h"
 
+const static koopa_raw_value_data_t *make_zero(koopa_raw_value_data_t *raw)
+{
+    auto zero = new koopa_raw_value_data_t;
+    auto zero_ty = new koopa_raw_type_kind_t;
+    zero_ty->tag = KOOPA_RTT_INT32;
+    zero->ty = zero_ty;
+
+    zero->name = nullptr;
+    zero->kind.tag = KOOPA_RVT_INTEGER;
+    zero->kind.data.integer.value = 0;
+
+    zero->used_by.kind = KOOPA_RSIK_VALUE;
+    zero->used_by.len = 1;
+    zero->used_by.buffer = new const void*[zero->used_by.len];
+    zero->used_by.buffer[0] = raw;
+
+    return zero;
+}
+
 void *CompUnitAST::toRaw() const
 {
     auto raw_program = new koopa_raw_program_t;
@@ -186,19 +205,7 @@ void *UnaryExpAST::toRaw() const
         assert(false);
     }
 
-    auto zero = new koopa_raw_value_data_t;
-    auto zero_ty = new koopa_raw_type_kind_t;
-    zero_ty->tag = KOOPA_RTT_INT32;
-    zero->ty = zero_ty;
-
-    zero->name = nullptr;
-    zero->kind.tag = KOOPA_RVT_INTEGER;
-    zero->kind.data.integer.value = 0;
-
-    zero->used_by.kind = KOOPA_RSIK_VALUE;
-    zero->used_by.len = 1;
-    zero->used_by.buffer = new const void*[zero->used_by.len];
-    zero->used_by.buffer[0] = raw;
+    auto zero = make_zero(raw);
 
     raw->kind.data.binary.lhs = zero;
 
@@ -486,19 +493,7 @@ void *LAndExpAST::toRaw() const
     raw_left->kind.tag = KOOPA_RVT_BINARY;
     raw_left->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
 
-    auto zero_left = new koopa_raw_value_data_t;
-    auto zero_left_ty = new koopa_raw_type_kind_t;
-    zero_left_ty->tag = KOOPA_RTT_INT32;
-    zero_left->ty = zero_left_ty;
-
-    zero_left->name = nullptr;
-    zero_left->kind.tag = KOOPA_RVT_INTEGER;
-    zero_left->kind.data.integer.value = 0;
-
-    zero_left->used_by.kind = KOOPA_RSIK_VALUE;
-    zero_left->used_by.len = 1;
-    zero_left->used_by.buffer = new const void*[zero_left->used_by.len];
-    zero_left->used_by.buffer[0] = raw_left;
+    auto zero_left = make_zero(raw_left);
 
     raw_left->kind.data.binary.lhs = zero_left;
 
@@ -533,19 +528,7 @@ void *LAndExpAST::toRaw() const
     raw_right->kind.tag = KOOPA_RVT_BINARY;
     raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
 
-    auto zero_right = new koopa_raw_value_data_t;
-    auto zero_right_ty = new koopa_raw_type_kind_t;
-    zero_right_ty->tag = KOOPA_RTT_INT32;
-    zero_right->ty = zero_right_ty;
-
-    zero_right->name = nullptr;
-    zero_right->kind.tag = KOOPA_RVT_INTEGER;
-    zero_right->kind.data.integer.value = 0;
-
-    zero_right->used_by.kind = KOOPA_RSIK_VALUE;
-    zero_right->used_by.len = 1;
-    zero_right->used_by.buffer = new const void*[zero_right->used_by.len];
-    zero_right->used_by.buffer[0] = raw_right;
+    auto zero_right = make_zero(raw_right);
 
     raw_right->kind.data.binary.lhs = zero_right;
 
@@ -624,19 +607,7 @@ void *LOrExpAST::toRaw() const
     raw->kind.tag = KOOPA_RVT_BINARY;
     raw->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
 
-    auto zero = new koopa_raw_value_data_t;
-    auto zero_ty = new koopa_raw_type_kind_t;
-    zero_ty->tag = KOOPA_RTT_INT32;
-    zero->ty = zero_ty;
-
-    zero->name = nullptr;
-    zero->kind.tag = KOOPA_RVT_INTEGER;
-    zero->kind.data.integer.value = 0;
-
-    zero->used_by.kind = KOOPA_RSIK_VALUE;
-    zero->used_by.len = 1;
-    zero->used_by.buffer = new const void*[zero->used_by.len];
-    zero->used_by.buffer[0] = raw;
+    auto zero = make_zero(raw);
 
     raw->kind.data.binary.lhs = zero;
 
