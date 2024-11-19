@@ -1,6 +1,6 @@
 #include "ast.h"
 
-const static koopa_raw_value_data_t *make_zero(koopa_raw_value_data_t *raw)
+koopa_raw_value_data_t* BaseAST::make_zero(koopa_raw_value_data_t* raw)
 {
     auto zero = new koopa_raw_value_data_t;
     auto zero_ty = new koopa_raw_type_kind_t;
