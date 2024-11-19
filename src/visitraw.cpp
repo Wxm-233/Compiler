@@ -21,7 +21,7 @@ int use_inst(koopa_raw_value_t inst)
             return i;
         }
     }
-    throw std::runtime_error("register not found");
+    assert(false);
 }
 
 int alloc_reg(const koopa_raw_value_t &value)
@@ -42,7 +42,7 @@ int alloc_reg(const koopa_raw_value_t &value)
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
 {
-    std::clog << "visiting raw program..." << std::endl;
+    // std::clog << "visiting raw program..." << std::endl;
     // 执行一些其他的必要操作
     for (auto i : regs) {
         i = {nullptr, 0};
@@ -58,7 +58,7 @@ void Visit(const koopa_raw_program_t &program)
 // 访问 raw slice
 void Visit(const koopa_raw_slice_t &slice)
 {
-    std::clog << "visiting slice buffer..." << std::endl;
+    // std::clog << "visiting slice buffer..." << std::endl;
     for (size_t i = 0; i < slice.len; ++i)
     {
         auto ptr = slice.buffer[i];
@@ -79,7 +79,7 @@ void Visit(const koopa_raw_slice_t &slice)
             break;
         default:
             // 我们暂时不会遇到其他内容, 于是不对其做任何处理
-            exit(2);
+            assert(false);
         }
     }
 }
@@ -112,7 +112,7 @@ void Visit(const koopa_raw_basic_block_t &bb)
 void Visit(const koopa_raw_value_t &value)
 {
     // 根据指令类型判断后续需要如何访问
-    std::clog << "visiting value: kind.tag=" << value->kind.tag << std::endl;
+    // std::clog << "visiting value: kind.tag=" << value->kind.tag << std::endl;
     const auto &kind = value->kind;
     switch (kind.tag)
     {
@@ -122,17 +122,17 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_INTEGER:
         // 访问 integer 指令
-        std::clog << "integer: " << kind.data.integer.value << std::endl;
+        // std::clog << "integer: " << kind.data.integer.value << std::endl;
         Visit(kind.data.integer, value);
         break;
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
-        std::clog << "binary: " << kind.data.binary.op << std::endl;
+        // std::clog << "binary: " << kind.data.binary.op << std::endl;
         Visit(kind.data.binary, value);
         break;
     default:
         // 其他类型暂时遇不到
-        exit(3);
+        assert(false);
     }
 }
 
@@ -148,11 +148,7 @@ void Visit(const koopa_raw_return_t &ret)
             std::cout << "  li a0, " << ret.value->kind.data.integer.value << std::endl; 
         }
         else {
-            try {
-                std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
-            } catch (const std::runtime_error &e) {
-                exit(-1);
-            }
+            std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
         }
     }
     std::cout << "  ret";
@@ -173,68 +169,66 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
     if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER) {
         Visit(binary.rhs);
     }
+    int left_pos = use_inst(binary.lhs);
+    int right_pos = use_inst(binary.rhs);
     int pos = alloc_reg(value);
-    try {
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
-            std::cout << "  sub a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             std::cout << "  snez a" << pos << ", a" << pos << std::endl;
             break;
         case KOOPA_RBO_EQ:
-            std::cout << "  sub a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
             break;
         case KOOPA_RBO_GT:
-            std::cout << "  sgt a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sgt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_LT:
-            std::cout << "  slt a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  slt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_GE:
-            std::cout << "  slt a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  slt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
             break;
         case KOOPA_RBO_LE:
-            std::cout << "  sgt a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sgt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
             break;
         case KOOPA_RBO_ADD:
-            std::cout << "  add a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  add a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_SUB:
-            std::cout << "  sub a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_MUL:
-            std::cout << "  mul a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  mul a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_DIV:
-            std::cout << "  div a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  div a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_MOD:
-            std::cout << "  rem a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  rem a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_AND:
-            std::cout << "  and a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  and a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_OR:
-            std::cout << "  or a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  or a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_XOR:
-            std::cout << "  xor a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  xor a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_SHL:
-            std::cout << "  sll a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sll a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_SHR:
-            std::cout << "  srl a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  srl a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         case KOOPA_RBO_SAR:
-            std::cout << "  sra a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
+            std::cout << "  sra a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         default:
-            exit(4);
-    }
-    } catch (const std::runtime_error &e) {
-        exit(binary.op+1);
+            assert(false);
     }
 }
