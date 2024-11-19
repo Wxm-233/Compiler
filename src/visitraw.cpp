@@ -11,7 +11,7 @@ inst_reg_use regs[8];
 
 int use_inst(koopa_raw_value_t inst)
 {
-    std::clog << "inst: " << inst->kind.tag << std::endl;
+    // std::clog << "inst: " << inst->kind.tag << std::endl;
     for (int i = 0; i < 8; i++) {
         if (regs[i].data == inst) {
             regs[i].n_used_by -= 1;
@@ -21,7 +21,7 @@ int use_inst(koopa_raw_value_t inst)
             return i;
         }
     }
-    exit(1);
+    throw std::runtime_error("register not found");
 }
 
 int alloc_reg(const koopa_raw_value_t &value)
@@ -150,7 +150,11 @@ void Visit(const koopa_raw_return_t &ret)
             std::cout << "  li a0, " << ret.value->kind.data.integer.value << std::endl; 
         }
         else {
-            std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
+            try {
+                std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
+            } catch (const std::runtime_error &e) {
+                exit(-1);
+            }
         }
     }
     std::cout << "  ret";
@@ -170,6 +174,7 @@ void Visit(const koopa_raw_binary_t &binary, int pos)
     if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER) {
         Visit(binary.rhs);
     }
+    try {
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
             std::cout << "  sub a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
@@ -228,5 +233,8 @@ void Visit(const koopa_raw_binary_t &binary, int pos)
             break;
         default:
             exit(4);
+    }
+    } catch (const std::runtime_error &e) {
+        exit(binary.op);
     }
 }
