@@ -235,6 +235,6 @@ void Visit(const koopa_raw_binary_t &binary, int pos)
             exit(4);
     }
     } catch (const std::runtime_error &e) {
-        exit(binary.op);
+        exit(binary.op+1);
     }
 }
