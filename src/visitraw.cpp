@@ -21,7 +21,7 @@ int use_inst(koopa_raw_value_t inst)
             return i;
         }
     }
-    throw std::runtime_error("register not found");
+    assert(false);
 }
 
 int alloc_reg(const koopa_raw_value_t &value)
@@ -42,7 +42,7 @@ int alloc_reg(const koopa_raw_value_t &value)
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
 {
-    std::clog << "visiting raw program..." << std::endl;
+    // std::clog << "visiting raw program..." << std::endl;
     // 执行一些其他的必要操作
     for (auto i : regs) {
         i = {nullptr, 0};
@@ -58,7 +58,7 @@ void Visit(const koopa_raw_program_t &program)
 // 访问 raw slice
 void Visit(const koopa_raw_slice_t &slice)
 {
-    std::clog << "visiting slice buffer..." << std::endl;
+    // std::clog << "visiting slice buffer..." << std::endl;
     for (size_t i = 0; i < slice.len; ++i)
     {
         auto ptr = slice.buffer[i];
@@ -79,7 +79,7 @@ void Visit(const koopa_raw_slice_t &slice)
             break;
         default:
             // 我们暂时不会遇到其他内容, 于是不对其做任何处理
-            exit(2);
+            assert(false);
         }
     }
 }
@@ -132,7 +132,7 @@ void Visit(const koopa_raw_value_t &value)
         break;
     default:
         // 其他类型暂时遇不到
-        exit(3);
+        assert(false);
     }
 }
 
@@ -148,11 +148,7 @@ void Visit(const koopa_raw_return_t &ret)
             std::cout << "  li a0, " << ret.value->kind.data.integer.value << std::endl; 
         }
         else {
-            try {
-                std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
-            } catch (const std::runtime_error &e) {
-                exit(-1);
-            }
+            std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
         }
     }
     std::cout << "  ret";
@@ -176,7 +172,6 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
     int left_pos = use_inst(binary.lhs);
     int right_pos = use_inst(binary.rhs);
     int pos = alloc_reg(value);
-    try {
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
             std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
@@ -234,9 +229,6 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
             std::cout << "  sra a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
             break;
         default:
-            exit(4);
-    }
-    } catch (const std::runtime_error &e) {
-        exit(binary.op+1);
+            assert(false);
     }
 }
