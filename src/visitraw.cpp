@@ -111,8 +111,6 @@ void Visit(const koopa_raw_basic_block_t &bb)
 // 访问指令
 void Visit(const koopa_raw_value_t &value)
 {
-    int pos = alloc_reg(value);
-    
     // 根据指令类型判断后续需要如何访问
     std::clog << "visiting value: kind.tag=" << value->kind.tag << std::endl;
     const auto &kind = value->kind;
@@ -125,12 +123,12 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_INTEGER:
         // 访问 integer 指令
         std::clog << "integer: " << kind.data.integer.value << std::endl;
-        Visit(kind.data.integer, pos);
+        Visit(kind.data.integer, value);
         break;
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
         std::clog << "binary: " << kind.data.binary.op << std::endl;
-        Visit(kind.data.binary, pos);
+        Visit(kind.data.binary, value);
         break;
     default:
         // 其他类型暂时遇不到
@@ -160,13 +158,14 @@ void Visit(const koopa_raw_return_t &ret)
     std::cout << "  ret";
 }
 
-void Visit(const koopa_raw_integer_t &integer, int pos)
+void Visit(const koopa_raw_integer_t &integer, const koopa_raw_value_t value)
 {
+    int pos = alloc_reg(value);
     std::cout << "  li a" << pos << ", " << integer.value << std::endl;
 }
 
 // 访问二元运算指令
-void Visit(const koopa_raw_binary_t &binary, int pos)
+void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
 {
     if (binary.lhs->kind.tag == KOOPA_RVT_INTEGER) {
         Visit(binary.lhs);
@@ -174,6 +173,7 @@ void Visit(const koopa_raw_binary_t &binary, int pos)
     if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER) {
         Visit(binary.rhs);
     }
+    int pos = alloc_reg(value);
     try {
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
