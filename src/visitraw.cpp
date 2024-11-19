@@ -21,7 +21,7 @@ int use_inst(koopa_raw_value_t inst)
             return i;
         }
     }
-    assert(false);
+    exit(1);
 }
 
 int alloc_reg(const koopa_raw_value_t &value)
@@ -79,7 +79,7 @@ void Visit(const koopa_raw_slice_t &slice)
             break;
         default:
             // 我们暂时不会遇到其他内容, 于是不对其做任何处理
-            assert(false);
+            exit(2);
         }
     }
 }
@@ -134,7 +134,7 @@ void Visit(const koopa_raw_value_t &value)
         break;
     default:
         // 其他类型暂时遇不到
-        assert(false);
+        exit(3);
     }
 }
 
@@ -227,6 +227,6 @@ void Visit(const koopa_raw_binary_t &binary, int pos)
             std::cout << "  sra a" << pos << ", a" << use_inst(binary.lhs) << ", a" << use_inst(binary.rhs) << std::endl;
             break;
         default:
-            assert(false);
+            exit(4);
     }
 }
