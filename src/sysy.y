@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 #include "ast.h"
 
 // 声明 lexer 函数和错误处理函数
@@ -34,19 +35,28 @@ using namespace std;
   int int_val;
   char char_val;
   BaseAST *ast_val;
+  std::vector<std::unique_ptr<BaseAST>> *vec_val;
 }
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN LAND LOR
+%token INT RETURN LAND LOR CONST
 %token <str_val> IDENT RELOP EQOP
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp MulExp AddExp
-%type <ast_val> RelExp EqExp LAndExp LOrExp
+%type <ast_val> FuncDef FuncType Block BlockItem Stmt 
+%type <ast_val> ConstExp Exp UnaryExp PrimaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
+%type <ast_val> Decl ConstDecl ConstDef ConstInitVal
+%type <ast_val> LVal 
+
 %type <int_val> Number
+
 %type <char_val> UnaryOp MulOp AddOp
+
+%type <str_val> BType
+
+%type <vec_val> ConstDefList BlockItemList
 
 %%
 
@@ -93,9 +103,35 @@ FuncType
   ;
 
 Block
-  : '{' Stmt '}' {
+  : '{' BlockItemList '}' {
     auto ast = new BlockAST();
-    ast->stmt = unique_ptr<BaseAST>($2);
+    ast->block_item_list = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  ;
+
+BlockItemList
+  : {
+    $$ = new std::vector<unique_ptr<BaseAST>>();
+  }
+  | BlockItemList BlockItem {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($2));
+    $$ = vec;
+  }
+  ;
+
+BlockItem
+  : Decl {
+    auto ast = new BlockItemAST();
+    ast->decl = unique_ptr<BaseAST>($1);
+    ast->is_decl = true;
+    $$ = ast;
+  }
+  | Stmt {
+    auto ast = new BlockItemAST();
+    ast->stmt = unique_ptr<BaseAST>($1);
+    ast->is_decl = false;
     $$ = ast;
   }
   ;
@@ -104,6 +140,14 @@ Stmt
   : RETURN Exp ';' {
     auto ast = new StmtAST();
     ast->exp = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  ;
+
+ConstExp
+  : Exp {
+    auto ast = new ConstExpAST();
+    ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
@@ -120,14 +164,20 @@ PrimaryExp
   : '(' Exp ')' {
     auto ast = new PrimaryExpAST();
     ast->exp = unique_ptr<BaseAST>($2);
-    ast->is_number = false;
+    ast->type = PrimaryExpAST::EXP;
+    $$ = ast;
+  }
+  | LVal {
+    auto ast = new PrimaryExpAST();
+    ast->lval = unique_ptr<BaseAST>($1);
+    ast->type = PrimaryExpAST::LVAL;
     $$ = ast;
   }
   |
   Number {
     auto ast = new PrimaryExpAST();
     ast->number = $1;
-    ast->is_number = true;
+    ast->type = PrimaryExpAST::NUMBER;
     $$ = ast;
   }
   ;
@@ -289,6 +339,68 @@ LOrExp
     $$ = ast;
   }
   ;
+
+Decl
+  : ConstDecl {
+    auto ast = new DeclAST();
+    ast->const_decl = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+ConstDecl
+  : CONST BType ConstDefList ';' {
+    auto ast = new ConstDeclAST();
+    ast->btype = *unique_ptr<std::string>($1);
+    ast->const_def_list = unique_ptr<BaseAST>($2);
+    $$ = ast;
+  }
+  ;
+
+ConstDefList
+  : ConstDef {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | ConstDefList ',' ConstDef {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
+  }
+  ;
+
+BType
+  : INT {
+    $$ = new std::string("int");
+  }
+  ;
+
+ConstDef
+  : IDENT '=' ConstInitVal {
+    auto ast = new ConstDefAST();
+    ast->ident = *unique_ptr<std::string>($1);
+    ast->const_init_val = unique_ptr<BaseAST>($3);
+    $$ = ast;
+  }
+  ;
+
+ConstInitVal
+  : ConstExp {
+    auto ast = new ConstInitValAST();
+    ast->const_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  ;
+
+LVal
+  : IDENT {
+    auto ast = new LValAST();
+    ast->ident = *unique_ptr<std::string>($1);
+    $$ = ast;
+  }
+  ;
+
 %%
 
 // 定义错误处理函数, 其中第二个参数是错误信息

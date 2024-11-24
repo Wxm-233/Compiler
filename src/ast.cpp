@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "symtab.h"
 
 koopa_raw_value_data_t* BaseAST::make_zero(koopa_raw_value_data_t* raw)
 {
@@ -97,21 +98,32 @@ void *BlockAST::toRaw() const
     raw_block->used_by.kind = KOOPA_RSIK_VALUE;
 
     raw_block->insts.kind = KOOPA_RSIK_VALUE;
-    auto insts_vec = (std::vector<koopa_raw_value_data*>*) stmt->toRaw();
+    auto insts_vec = new std::vector<koopa_raw_value_data*>();
+    for (auto &i : *block_item_list) {
+        insts_vec->push_back((koopa_raw_value_data*)(i->toRaw()));
+    }
     int index = 0;
     for (auto inst : *insts_vec) {
-        if (inst->kind.tag != KOOPA_RVT_INTEGER)
+        if (inst == nullptr || inst->kind.tag != KOOPA_RVT_INTEGER)
             index++;
     }
     raw_block->insts.len = index;
     raw_block->insts.buffer = new const void*[raw_block->insts.len];
     index = 0;
     for (auto inst: *insts_vec) {
-        if (inst->kind.tag != KOOPA_RVT_INTEGER)
+        if (inst == nullptr || inst->kind.tag != KOOPA_RVT_INTEGER)
             raw_block->insts.buffer[index++] = inst;
     }
 
     return raw_block;
+}
+
+void *BlockItemAST::toRaw() const
+{
+    if (is_decl) {
+        return decl->toRaw();
+    }
+    return stmt->toRaw();
 }
 
 void *StmtAST::toRaw() const
@@ -155,7 +167,13 @@ void *ExpAST::toRaw() const
 
 void *PrimaryExpAST::toRaw() const
 {
-    if (is_number) {
+    switch (type)
+    {
+    case EXP:
+        return exp->toRaw();
+    case LVAL:
+        return lval->toRaw();
+    case NUMBER:
         auto raw = new koopa_raw_value_data_t;
 
         auto ty = new koopa_raw_type_kind_t;
@@ -169,9 +187,8 @@ void *PrimaryExpAST::toRaw() const
         auto insts = new std::vector<koopa_raw_value_data*>;
         insts->push_back(raw);
         return insts;
-    }
-    else {
-        return exp->toRaw();
+    default:
+        assert(false);
     }
 }
 
@@ -621,4 +638,20 @@ void *LOrExpAST::toRaw() const
     left_insts->push_back(raw);
 
     return left_insts;
+}
+
+void *DeclAST::toRaw() const
+{
+    return const_decl->toRaw();
+}
+
+void *ConstDeclAST::toRaw() const
+{
+    
+    return nullptr;
+}
+
+void *ConstDefAST::toRaw() const
+{
+    
 }

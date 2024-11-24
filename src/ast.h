@@ -60,12 +60,30 @@ public:
 class BlockAST : public BaseAST
 {
 public:
+    std::vector<std::unique_ptr<BaseAST>> *block_item_list;
+
+    void* toRaw() const override;
+};
+
+class BlockItemAST : public BaseAST
+{
+public:
+    bool is_decl;
+    std::unique_ptr<BaseAST> decl;
     std::unique_ptr<BaseAST> stmt;
 
     void* toRaw() const override;
 };
 
 class StmtAST : public BaseAST
+{
+public:
+    std::unique_ptr<BaseAST> exp;
+
+    void* toRaw() const override;
+};
+
+class ConstExpAST : public BaseAST
 {
 public:
     std::unique_ptr<BaseAST> exp;
@@ -84,8 +102,14 @@ public:
 class PrimaryExpAST : public BaseAST
 {
 public:
-    bool is_number;
+    enum Type
+    {
+        EXP,
+        LVAL,
+        NUMBER
+    } type;
     std::unique_ptr<BaseAST> exp;
+    std::unique_ptr<BaseAST> lval;
     int number;
 
     void* toRaw() const override;
@@ -165,3 +189,46 @@ public:
 
     void *toRaw() const override;
 };
+
+class DeclAST : public BaseAST
+{
+public:
+    std::unique_ptr<BaseAST> const_decl;
+
+    void* toRaw() const override;
+};
+
+class ConstDeclAST : public BaseAST
+{
+public:
+    std::string btype;
+    std::vector<std::unique_ptr<BaseAST>> *const_def_list;
+
+    void* toRaw() const override;
+};
+
+class ConstDefAST : public BaseAST
+{
+public:
+    std::string ident;
+    std::unique_ptr<BaseAST> const_init_val;
+
+    void* toRaw() const override;
+};
+
+class ConstInitValAST : public BaseAST
+{
+public:
+    std::unique_ptr<BaseAST> const_exp;
+
+    void* toRaw() const override;
+};
+
+class LValAST : public BaseAST
+{
+public:
+    std::string ident;
+
+    void* toRaw() const override;
+};
+
