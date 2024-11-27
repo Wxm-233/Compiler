@@ -25,19 +25,12 @@ char* BaseAST::build_ident(const std::string& ident)
     name[ident.size() + 1] = '\0';
     return name;
 }
-// 需要补充used_by自身有一定长度的情况
+
+// 其实不需要写used_by，哈哈
 void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user)
 {
     value->used_by.kind = KOOPA_RSIK_VALUE;
     value->used_by.len = 0;
-    // if (user == nullptr) {
-    //     value->used_by.len = 0;
-    //     value->used_by.buffer = nullptr;
-    // } else {
-    //     value->used_by.len = 1;
-    //     value->used_by.buffer = new const void*[1];
-    //     value->used_by.buffer[0] = user;
-    // }
 }
 
 void *CompUnitAST::toRaw() const
@@ -685,9 +678,6 @@ void *DeclAST::toRaw() const
 
 void *ConstDeclAST::toRaw() const
 {
-    // for (auto &i : *const_def_list) {
-    //     i->toRaw();
-    // }
     return nullptr;
 }
 
