@@ -29,14 +29,15 @@ char* BaseAST::build_ident(const std::string& ident)
 void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user)
 {
     value->used_by.kind = KOOPA_RSIK_VALUE;
-    if (user == nullptr) {
-        value->used_by.len = 0;
-        value->used_by.buffer = nullptr;
-    } else {
-        value->used_by.len = 1;
-        value->used_by.buffer = new const void*[1];
-        value->used_by.buffer[0] = user;
-    }
+    value->used_by.len = 0;
+    // if (user == nullptr) {
+    //     value->used_by.len = 0;
+    //     value->used_by.buffer = nullptr;
+    // } else {
+    //     value->used_by.len = 1;
+    //     value->used_by.buffer = new const void*[1];
+    //     value->used_by.buffer[0] = user;
+    // }
 }
 
 void *CompUnitAST::toRaw() const
