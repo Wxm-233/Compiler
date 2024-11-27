@@ -3,6 +3,7 @@
 #include <string>
 #include <stack>
 #include <memory>
+#include <koopa.h>
 
 namespace Symbol {
     enum Type
@@ -13,12 +14,14 @@ namespace Symbol {
 
     struct symbol_val {
         Type type;
-        void* value; 
-        // for const, value is the value of the constant
-        // for var, value is the address of the alloc instruction
+        int int_value;
+        koopa_raw_value_data_t* allocator;
+
+        
     };
 
     // Type str2type(const std::string &str);
-    void insert(const std::string &ident, Type type, void* value);
-    std::pair<Type, void*> query(const std::string &ident);
+    void insert(const std::string &ident, Type type, int int_value);
+    void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator);
+    symbol_val query(const std::string &ident);
 };

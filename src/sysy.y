@@ -194,8 +194,8 @@ PrimaryExp
     auto ast = new PrimaryExpAST();
     auto lval = dynamic_cast<LValAST*>($1);
     auto q = Symbol::query(lval->ident);
-    if (q.first == Symbol::TYPE_CONST) {
-      ast->number = *(long*)&q.second;
+    if (q.type == Symbol::TYPE_CONST) {
+      ast->number = q.int_value;
       ast->type = PrimaryExpAST::NUMBER;
     } else {
       ast->lval = unique_ptr<BaseAST>($1);
@@ -586,7 +586,7 @@ ConstDef
     auto ast = new ConstDefAST();
     auto ident = *$1;
     auto const_init_val = $3;
-    Symbol::insert(ident, Symbol::TYPE_CONST, (void*)const_init_val);
+    Symbol::insert(ident, Symbol::TYPE_CONST, const_init_val);
     ast->ident = *unique_ptr<std::string>($1);
     ast->const_init_val = $3;
     $$ = ast;
