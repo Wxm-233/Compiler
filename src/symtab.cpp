@@ -3,19 +3,26 @@
 #include <cassert>
 
 namespace Symbol {
-    std::map<std::string, std::pair<Type, void*>> symtab;
+    std::map<std::string, symbol_val> symtab;
 
-    void insert(const std::string &ident, Type type, void* value)
+    void insert(const std::string &ident, Type type, int int_value)
     {
         if (symtab.find(ident) != symtab.end())
             assert(false);
-        symtab[ident] = {type, value};
+        symtab[ident] = {type, int_value, nullptr};
     }
     
-    std::pair<Type, void*> query(const std::string &ident)
+    void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator)
+    {
+        if (symtab.find(ident) != symtab.end())
+            assert(false);
+        symtab[ident] = {type, 0, allocator};
+    }
+
+    symbol_val query(const std::string &ident)
     {
         if (symtab.find(ident) == symtab.end())
-            return std::pair<Type, void*>(TYPE_VAR, 0);
+            return {TYPE_VAR, 0, nullptr};
         return symtab[ident];
     }
 }

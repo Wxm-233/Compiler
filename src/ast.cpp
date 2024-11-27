@@ -25,18 +25,18 @@ char* BaseAST::build_ident(const std::string& ident)
     name[ident.size() + 1] = '\0';
     return name;
 }
-// 需要补充used_by自身有一定长度的情况
+// 需要补充used_by自身有一定长度的情况（已补充）
 void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user)
 {
+    if (user == nullptr)
+        return;
+    
     value->used_by.kind = KOOPA_RSIK_VALUE;
-    if (user == nullptr) {
-        value->used_by.len = 0;
-        value->used_by.buffer = nullptr;
-    } else {
-        value->used_by.len = 1;
-        value->used_by.buffer = new const void*[1];
-        value->used_by.buffer[0] = user;
-    }
+    value->used_by.len += 1;
+    if (value->used_by.buffer != nullptr)
+        delete[] value->used_by.buffer;
+    value->used_by.buffer = new const void*[value->used_by.len];
+    value->used_by.buffer[value->used_by.len-1] = user;
 }
 
 void *CompUnitAST::toRaw() const
@@ -120,6 +120,7 @@ void *BlockAST::toRaw() const
         if (ret_vec == nullptr)
             continue;
         for (auto &j : *ret_vec) {
+            // 判断条件正确吗？
             if (j == nullptr || j->kind.tag != KOOPA_RVT_INTEGER) {
                 insts_vec->push_back(j);
                 index++;
@@ -179,8 +180,8 @@ void *StmtAST::toRaw() const
 
             ident = dynamic_cast<LValAST*>(lval.get())->ident;
             auto sym = Symbol::query(ident);
-            assert(sym.first == Symbol::TYPE_VAR);
-            auto raw_alloc = (koopa_raw_value_data_t*)sym.second;
+            assert(sym.type == Symbol::TYPE_VAR);
+            auto raw_alloc = sym.allocator;
 
             insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
             assert(insts_exp->size() > 0);
@@ -201,7 +202,9 @@ void *StmtAST::toRaw() const
             raw_stmt->kind.tag = KOOPA_RVT_RETURN;
             insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
             assert(insts_exp->size() > 0);
-            raw_stmt->kind.data.ret.value = *insts_exp->rbegin();
+            auto value = *insts_exp->rbegin();
+            set_used_by(value, raw_stmt);
+            raw_stmt->kind.data.ret.value = value;
             insts_exp->push_back(raw_stmt);
             return insts_exp;
         }
@@ -708,7 +711,7 @@ void *ConstDefAST::toRaw() const
 
 void *VarDefAST::toRaw() const
 {
-    std::vector<koopa_raw_value_data*>* insts = new std::vector<koopa_raw_value_data*>();
+    auto insts = new std::vector<koopa_raw_value_data*>();
 
     // alloc
     auto raw_alloc = new koopa_raw_value_data_t;
@@ -740,12 +743,15 @@ void *VarDefAST::toRaw() const
         for (auto inst : *ret_insts) {
             insts->push_back(inst);
         }
-        raw_store->kind.data.store.value = *ret_insts->rbegin();
+        auto value = *ret_insts->rbegin();
+        set_used_by(value, raw_store);
+        set_used_by(raw_alloc, raw_store);
+        raw_store->kind.data.store.value = value;
         raw_store->kind.data.store.dest = raw_alloc;
         insts->push_back(raw_store);
     }
 
-    Symbol::insert(ident, Symbol::TYPE_VAR, (void*)raw_alloc);
+    Symbol::insert(ident, Symbol::TYPE_VAR, raw_alloc);
 
     return insts;
 }
@@ -765,8 +771,8 @@ void *InitValAST::toRaw() const
 void *LValAST::toRaw() const
 {
     auto sym = Symbol::query(ident);
-    if (sym.first == Symbol::TYPE_CONST) {
-        auto raw = build_number((long)sym.second, nullptr);
+    if (sym.type == Symbol::TYPE_CONST) {
+        auto raw = build_number(sym.int_value, nullptr);
         auto insts = new std::vector<koopa_raw_value_data*>();
         insts->push_back(raw);
         return insts;
@@ -784,7 +790,7 @@ void *LValAST::toRaw() const
     raw->name = nullptr;
     raw->kind.tag = KOOPA_RVT_LOAD;
 
-    auto raw_src = (koopa_raw_value_data*)sym.second;
+    auto raw_src = sym.allocator;
     
     raw->kind.data.load.src = raw_src;
 
