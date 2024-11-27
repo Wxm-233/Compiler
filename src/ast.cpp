@@ -156,20 +156,18 @@ void *StmtAST::toRaw() const
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_INT32;
     raw_stmt->ty = ty;
-
     raw_stmt->name = nullptr;
-
     set_used_by(raw_stmt, nullptr);
 
     std::vector<koopa_raw_value_data*>* insts_exp;
     std::string ident;
-
-    auto insts = new std::vector<koopa_raw_value_data*>();
+    
 
     switch (type)
     {
         case LVAL_ASSIGN:
         {
+            auto insts = new std::vector<koopa_raw_value_data*>();
             raw_stmt->kind.tag = KOOPA_RVT_STORE;
 
             ident = dynamic_cast<LValAST*>(lval.get())->ident;
@@ -201,6 +199,26 @@ void *StmtAST::toRaw() const
             raw_stmt->kind.data.ret.value = value;
             insts_exp->push_back(raw_stmt);
             return insts_exp;
+        }
+        case EMPTY_RETURN:
+        {
+            auto insts = new std::vector<koopa_raw_value_data*>();
+            raw_stmt->kind.tag = KOOPA_RVT_RETURN;
+            raw_stmt->kind.data.ret.value = nullptr;
+            insts->push_back(raw_stmt);
+            return insts;
+        }
+        case BLOCK:
+        {
+            return block->toRaw();
+        }
+        case EXP:
+        {
+            return exp->toRaw();
+        }
+        case EMPTY:
+        {
+            return new std::vector<koopa_raw_value_data*>();
         }
         default:
             assert(false);

@@ -84,11 +84,16 @@ class StmtAST : public BaseAST
 public:
     enum Type {
         LVAL_ASSIGN,
-        RETURN
+        RETURN,
+        EMPTY_RETURN,
+        EMPTY,
+        EXP,
+        BLOCK
     } type;
 
     std::unique_ptr<BaseAST> exp;
     std::unique_ptr<BaseAST> lval;
+    std::unique_ptr<BaseAST> block;
 
     void* toRaw() const override;
 };
