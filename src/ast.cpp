@@ -114,25 +114,30 @@ void *BlockAST::toRaw() const
 
     raw_block->insts.kind = KOOPA_RSIK_VALUE;
     auto insts_vec = new std::vector<koopa_raw_value_data*>();
+    int index = 0;
+    bool return_detected = false;
     for (auto &i : *block_item_list) {
         auto ret_vec = (std::vector<koopa_raw_value_data*>*)i->toRaw();
         if (ret_vec == nullptr)
             continue;
         for (auto &j : *ret_vec) {
-            insts_vec->push_back(j);
-        } 
-    }
-    int index = 0;
-    for (auto inst : *insts_vec) {
-        if (inst == nullptr || inst->kind.tag != KOOPA_RVT_INTEGER)
-            index++;
+            if (j == nullptr || j->kind.tag != KOOPA_RVT_INTEGER) {
+                insts_vec->push_back(j);
+                index++;
+            }
+            if (j->kind.tag == KOOPA_RVT_RETURN) {
+                return_detected = true;
+                break;
+            }
+        }
+        if (return_detected)
+            break;
     }
     raw_block->insts.len = index;
     raw_block->insts.buffer = new const void*[raw_block->insts.len];
     index = 0;
     for (auto inst: *insts_vec) {
-        if (inst == nullptr || inst->kind.tag != KOOPA_RVT_INTEGER)
-            raw_block->insts.buffer[index++] = inst;
+        raw_block->insts.buffer[index++] = inst;
     }
 
     return raw_block;
@@ -140,10 +145,14 @@ void *BlockAST::toRaw() const
 
 void *BlockItemAST::toRaw() const
 {
-    if (is_decl) {
-        return decl->toRaw();
+    switch (type) {
+        case DECL:
+            return decl->toRaw();
+        case STMT:
+            return stmt->toRaw();
+        default:
+            assert(false);
     }
-    return stmt->toRaw();
 }
 
 void *StmtAST::toRaw() const

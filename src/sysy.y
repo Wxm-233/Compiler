@@ -127,13 +127,13 @@ BlockItem
   : Decl {
     auto ast = new BlockItemAST();
     ast->decl = unique_ptr<BaseAST>($1);
-    ast->is_decl = true;
+    ast->type = BlockItemAST::DECL;
     $$ = ast;
   }
   | Stmt {
     auto ast = new BlockItemAST();
     ast->stmt = unique_ptr<BaseAST>($1);
-    ast->is_decl = false;
+    ast->type = BlockItemAST::STMT;
     $$ = ast;
   }
   ;

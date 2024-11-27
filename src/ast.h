@@ -69,7 +69,10 @@ public:
 class BlockItemAST : public BaseAST
 {
 public:
-    bool is_decl;
+    enum Type {
+        DECL,
+        STMT
+    } type;
     std::unique_ptr<BaseAST> decl;
     std::unique_ptr<BaseAST> stmt;
 
