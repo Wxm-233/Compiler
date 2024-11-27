@@ -13,10 +13,12 @@ namespace Symbol {
 
     struct symbol_val {
         Type type;
-        int value;
+        void* value; 
+        // for const, value is the value of the constant
+        // for var, value is the address of the alloc instruction
     };
 
     // Type str2type(const std::string &str);
-    void insert(const std::string &ident, Type type, int value);
-    std::pair<Type, int> query(const std::string &ident);
+    void insert(const std::string &ident, Type type, void* value);
+    std::pair<Type, void*> query(const std::string &ident);
 };
