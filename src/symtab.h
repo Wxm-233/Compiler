@@ -22,7 +22,7 @@ namespace Symbol {
     void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator);
     symbol_val query(const std::string &ident);
     void enter_scope();
-    void exit_scope();
+    void leave_scope();
 };
 
 // namespace ConstSymbol {

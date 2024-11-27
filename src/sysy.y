@@ -50,9 +50,9 @@ using namespace std;
 %type <ast_val> FuncDef FuncType Block BlockItem Stmt 
 %type <ast_val> Exp UnaryExp PrimaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 %type <ast_val> Decl ConstDecl VarDecl ConstDef VarDef
-%type <ast_val> LVal InitVal
+%type <ast_val> LVal InitVal ConstInitVal ConstExp
 
-%type <int_val> Number ConstInitVal ConstExp
+%type <int_val> Number
 
 %type <char_val> UnaryOp MulOp AddOp
 
@@ -178,23 +178,16 @@ Stmt
 
 ConstExp
   : Exp {
-    auto exp = dynamic_cast<ExpAST*>($1);
-    assert(exp->type == ExpAST::NUMBER);
-    $$ = exp->number;
+    auto ast = new ConstExpAST();
+    ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
   }
   ;
 
 Exp
   : LOrExp {
     auto ast = new ExpAST();
-    auto lor_exp = dynamic_cast<LOrExpAST*>($1);
-    if (lor_exp->type == LOrExpAST::NUMBER) {
-      ast->type = ExpAST::NUMBER;
-      ast->number = lor_exp->number;
-    } else {
-      ast->type = ExpAST::LOR;
-      ast->lor_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->lor_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
@@ -202,27 +195,14 @@ Exp
 PrimaryExp
   : '(' Exp ')' {
     auto ast = new PrimaryExpAST();
-    auto exp = dynamic_cast<ExpAST*>($2);
-    if (exp->type == ExpAST::NUMBER) {
-      ast->type = PrimaryExpAST::NUMBER;
-      ast->number = exp->number;
-    } else {
-      ast->type = PrimaryExpAST::EXP;
-      ast->exp = unique_ptr<BaseAST>($2);
-    }
+    ast->type = PrimaryExpAST::EXP;
+    ast->exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
   | LVal {
     auto ast = new PrimaryExpAST();
-    auto lval = dynamic_cast<LValAST*>($1);
-    auto q = Symbol::query(lval->ident);
-    if (q.type == Symbol::TYPE_CONST) {
-      ast->number = q.int_value;
-      ast->type = PrimaryExpAST::NUMBER;
-    } else {
-      ast->lval = unique_ptr<BaseAST>($1);
-      ast->type = PrimaryExpAST::LVAL;
-    }
+    ast->lval = unique_ptr<BaseAST>($1);
+    ast->type = PrimaryExpAST::LVAL;
     $$ = ast;
   }
   |
@@ -276,40 +256,16 @@ MulOp
 UnaryExp
   : PrimaryExp {
     auto ast = new UnaryExpAST();
-    auto primary_exp = dynamic_cast<PrimaryExpAST*>($1);
-    if (primary_exp->type == PrimaryExpAST::NUMBER) {
-      ast->type = UnaryExpAST::NUMBER;
-      ast->number = primary_exp->number;
-    } else {
-      ast->type = UnaryExpAST::PRIMARY;
-      ast->primary_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = UnaryExpAST::PRIMARY;
+    ast->primary_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   |
   UnaryOp UnaryExp {
     auto ast = new UnaryExpAST();
-    auto unary_exp = dynamic_cast<UnaryExpAST*>($2);
-    if (unary_exp->type == UnaryExpAST::NUMBER) {
-      ast->type = UnaryExpAST::NUMBER;
-      int num = unary_exp->number;
-      switch ($1) {
-        case '+':
-          ast->number = num;
-          break;
-        case '-':
-          ast->number = -num;
-          break;
-        case '!':
-          ast->number = !num;
-          break;
-      }
-      ast->number = num;
-    } else {
-      ast->type = UnaryExpAST::UNARY;
-      ast->unaryop = $1;
-      ast->unary_exp = unique_ptr<BaseAST>($2);
-    }
+    ast->type = UnaryExpAST::UNARY;
+    ast->unaryop = $1;
+    ast->unary_exp = unique_ptr<BaseAST>($2);
     $$ = ast;
   }
   ;
@@ -317,42 +273,17 @@ UnaryExp
 MulExp
   : UnaryExp {
     auto ast = new MulExpAST();
-    auto unary_exp = dynamic_cast<UnaryExpAST*>($1);
-    if (unary_exp->type == UnaryExpAST::NUMBER) {
-      ast->type = MulExpAST::NUMBER;
-      ast->number = unary_exp->number;
-    } else {
-      ast->type = MulExpAST::UNARY;
-      ast->unary_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = MulExpAST::UNARY;
+    ast->unary_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   |
   MulExp MulOp UnaryExp {
     auto ast = new MulExpAST();
-    auto mul_exp = dynamic_cast<MulExpAST*>($1);
-    auto unary_exp = dynamic_cast<UnaryExpAST*>($3);
-    if (mul_exp->type == MulExpAST::NUMBER && unary_exp->type == UnaryExpAST::NUMBER) {
-      ast->type = MulExpAST::NUMBER;
-      int num1 = mul_exp->number;
-      int num2 = unary_exp->number;
-      switch ($2) {
-        case '*':
-          ast->number = num1 * num2;
-          break;
-        case '/':
-          ast->number = num1 / num2;
-          break;
-        case '%':
-          ast->number = num1 % num2;
-          break;
-      }
-    } else {
-      ast->type = MulExpAST::MUL;
-      ast->mul_exp = unique_ptr<BaseAST>($1);
-      ast->op = $2;
-      ast->unary_exp = unique_ptr<BaseAST>($3);
-    }
+    ast->type = MulExpAST::MUL;
+    ast->mul_exp = unique_ptr<BaseAST>($1);
+    ast->op = $2;
+    ast->unary_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -360,40 +291,17 @@ MulExp
 AddExp
   : MulExp {
     auto ast = new AddExpAST();
-    auto mul_exp = dynamic_cast<MulExpAST*>($1);
-    if (mul_exp->type == MulExpAST::NUMBER) {
-      ast->type = AddExpAST::NUMBER;
-      ast->number = mul_exp->number;
-    } else {
-      ast->type = AddExpAST::MUL;
-      ast->mul_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = AddExpAST::MUL;
+    ast->mul_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   |
   AddExp AddOp MulExp {
     auto ast = new AddExpAST();
-    auto add_exp = dynamic_cast<AddExpAST*>($1);
-    auto mul_exp = dynamic_cast<MulExpAST*>($3);
-    if (add_exp->type == AddExpAST::NUMBER && mul_exp->type == MulExpAST::NUMBER) {
-      ast->type = AddExpAST::NUMBER;
-      int num1 = add_exp->number;
-      int num2 = mul_exp->number;
-      switch ($2) {
-        case '+':
-          ast->number = num1 + num2;
-          break;
-        case '-':
-          ast->number = num1 - num2;
-          break;
-      }
-    } else {
-      ast->type = AddExpAST::ADD;
-      ast->add_exp = unique_ptr<BaseAST>($1);
-      ast->op = $2;
-      ast->mul_exp = unique_ptr<BaseAST>($3);
-    }
-
+    ast->type = AddExpAST::ADD;
+    ast->add_exp = unique_ptr<BaseAST>($1);
+    ast->op = $2;
+    ast->mul_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -401,40 +309,16 @@ AddExp
 RelExp
   : AddExp {
     auto ast = new RelExpAST();
-    auto add_exp = dynamic_cast<AddExpAST*>($1);
-    if (add_exp->type == AddExpAST::NUMBER) {
-      ast->type = RelExpAST::NUMBER;
-      ast->number = add_exp->number;
-    } else {
-      ast->type = RelExpAST::ADD;
-      ast->add_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = RelExpAST::ADD;
+    ast->add_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   | RelExp RELOP AddExp {
     auto ast = new RelExpAST();
-    auto rel_exp = dynamic_cast<RelExpAST*>($1);
-    std::string op = *$2;
-    auto add_exp = dynamic_cast<AddExpAST*>($3);
-    if (rel_exp->type == RelExpAST::NUMBER && add_exp->type == AddExpAST::NUMBER) {
-      ast->type = RelExpAST::NUMBER;
-      int num1 = rel_exp->number;
-      int num2 = add_exp->number;
-      if (op == "<") {
-        ast->number = num1 < num2;
-      } else if (op == "<=") {
-        ast->number = num1 <= num2;
-      } else if (op == ">") {
-        ast->number = num1 > num2;
-      } else if (op == ">=") {
-        ast->number = num1 >= num2;
-      }
-    } else {
-      ast->type = RelExpAST::REL;
-      ast->rel_exp = unique_ptr<BaseAST>($1);
-      ast->op = op;
-      ast->add_exp = unique_ptr<BaseAST>($3);
-    }
+    ast->type = RelExpAST::REL;
+    ast->rel_exp = unique_ptr<BaseAST>($1);
+    ast->op = *unique_ptr<std::string>($2);
+    ast->add_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -442,36 +326,16 @@ RelExp
 EqExp
   : RelExp {
     auto ast = new EqExpAST();
-    auto rel_exp = dynamic_cast<RelExpAST*>($1);
-    if (rel_exp->type == RelExpAST::NUMBER) {
-      ast->type = EqExpAST::NUMBER;
-      ast->number = rel_exp->number;
-    } else {
-      ast->type = EqExpAST::REL;
-      ast->rel_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = EqExpAST::REL;
+    ast->rel_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   | EqExp EQOP RelExp {
     auto ast = new EqExpAST();
-    auto eq_exp = dynamic_cast<EqExpAST*>($1);
-    std::string op = *$2;
-    auto rel_exp = dynamic_cast<RelExpAST*>($3);
-    if (eq_exp->type == EqExpAST::NUMBER && rel_exp->type == RelExpAST::NUMBER) {
-      ast->type = EqExpAST::NUMBER;
-      int num1 = eq_exp->number;
-      int num2 = rel_exp->number;
-      if (op == "==") {
-        ast->number = num1 == num2;
-      } else if (op == "!=") {
-        ast->number = num1 != num2;
-      }
-    } else {
-      ast->type = EqExpAST::EQ;
-      ast->eq_exp = unique_ptr<BaseAST>($1);
-      ast->op = op;
-      ast->rel_exp = unique_ptr<BaseAST>($3);
-    }
+    ast->type = EqExpAST::EQ;
+    ast->eq_exp = unique_ptr<BaseAST>($1);
+    ast->op = *unique_ptr<std::string>($2);
+    ast->rel_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -479,30 +343,15 @@ EqExp
 LAndExp
   : EqExp {
     auto ast = new LAndExpAST();
-    auto eq_exp = dynamic_cast<EqExpAST*>($1);
-    if (eq_exp->type == EqExpAST::NUMBER) {
-      ast->type = LAndExpAST::NUMBER;
-      ast->number = eq_exp->number;
-    } else {
-      ast->type = LAndExpAST::EQ;
-      ast->eq_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = LAndExpAST::EQ;
+    ast->eq_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   | LAndExp LAND EqExp {
     auto ast = new LAndExpAST();
-    auto land_exp = dynamic_cast<LAndExpAST*>($1);
-    auto eq_exp = dynamic_cast<EqExpAST*>($3);
-    if (land_exp->type == LAndExpAST::NUMBER && eq_exp->type == EqExpAST::NUMBER) {
-      ast->type = LAndExpAST::NUMBER;
-      int num1 = land_exp->number;
-      int num2 = eq_exp->number;
-      ast->number = num1 && num2;
-    } else {
-      ast->type = LAndExpAST::LAND;
-      ast->land_exp = unique_ptr<BaseAST>($1);
-      ast->eq_exp = unique_ptr<BaseAST>($3);
-    }
+    ast->type = LAndExpAST::LAND;
+    ast->land_exp = unique_ptr<BaseAST>($1);
+    ast->eq_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -510,30 +359,15 @@ LAndExp
 LOrExp
   : LAndExp {
     auto ast = new LOrExpAST();
-    auto land_exp = dynamic_cast<LAndExpAST*>($1);
-    if (land_exp->type == LAndExpAST::NUMBER) {
-      ast->type = LOrExpAST::NUMBER;
-      ast->number = land_exp->number;
-    } else {
-      ast->type = LOrExpAST::LAND;
-      ast->land_exp = unique_ptr<BaseAST>($1);
-    }
+    ast->type = LOrExpAST::LAND;
+    ast->land_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   | LOrExp LOR LAndExp {
     auto ast = new LOrExpAST();
-    auto lor_exp = dynamic_cast<LOrExpAST*>($1);
-    auto land_exp = dynamic_cast<LAndExpAST*>($3);
-    if (lor_exp->type == LOrExpAST::NUMBER && land_exp->type == LAndExpAST::NUMBER) {
-      ast->type = LOrExpAST::NUMBER;
-      int num1 = lor_exp->number;
-      int num2 = land_exp->number;
-      ast->number = num1 || num2;
-    } else {
-      ast->type = LOrExpAST::LOR;
-      ast->lor_exp = unique_ptr<BaseAST>($1);
-      ast->land_exp = unique_ptr<BaseAST>($3);
-    }
+    ast->type = LOrExpAST::LOR;
+    ast->lor_exp = unique_ptr<BaseAST>($1);
+    ast->land_exp = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -606,11 +440,8 @@ BType
 ConstDef
   : IDENT '=' ConstInitVal {
     auto ast = new ConstDefAST();
-    auto ident = *$1;
-    auto const_init_val = $3;
-    Symbol::insert(ident, Symbol::TYPE_CONST, const_init_val);
     ast->ident = *unique_ptr<std::string>($1);
-    ast->const_init_val = $3;
+    ast->const_init_val = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
   ;
@@ -633,21 +464,16 @@ VarDef
 
 ConstInitVal
   : ConstExp {
-    $$ = $1;
+    auto ast = new ConstInitValAST();
+    ast->const_exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
   }
   ;
 
 InitVal
   : Exp {
     auto ast = new InitValAST();
-    auto exp = dynamic_cast<ExpAST*>($1);
-    if (exp->type == ExpAST::NUMBER) {
-      ast->number = exp->number;
-      ast->type = InitValAST::NUMBER;
-    } else {
-      ast->exp = unique_ptr<BaseAST>($1);
-      ast->type = InitValAST::EXP;
-    }
+    ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
 

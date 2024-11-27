@@ -37,7 +37,7 @@ namespace Symbol {
         scope_level++;
     }
 
-    void exit_scope()
+    void leave_scope()
     {
         symtab_stack.pop_back();
         scope_level--;

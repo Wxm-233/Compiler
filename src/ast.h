@@ -98,15 +98,17 @@ public:
     void* toRaw() const override;
 };
 
+class ConstExpAST : public BaseAST
+{
+public:
+    std::unique_ptr<BaseAST> exp;
+
+    void* toRaw() const override;
+};
+
 class ExpAST : public BaseAST
 {
 public:
-    enum Type
-    {
-        NUMBER,
-        LOR
-    } type;
-    int number;
     std::unique_ptr<BaseAST> lor_exp;
 
     void* toRaw() const override;
@@ -132,11 +134,10 @@ class UnaryExpAST : public BaseAST
 {
 public:
     enum Type {
-        NUMBER,
         PRIMARY,
         UNARY
     } type;
-    int number;
+
     std::unique_ptr<BaseAST> primary_exp;
     char unaryop;
     std::unique_ptr<BaseAST> unary_exp; 
@@ -149,11 +150,9 @@ class MulExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         UNARY,
         MUL
     } type;
-    int number;
     std::unique_ptr<BaseAST> unary_exp;
     char op;
     std::unique_ptr<BaseAST> mul_exp;
@@ -166,11 +165,9 @@ class AddExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         MUL,
         ADD
     } type;
-    int number;
     std::unique_ptr<BaseAST> mul_exp;
     char op;
     std::unique_ptr<BaseAST> add_exp;
@@ -183,11 +180,9 @@ class RelExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         ADD,
         REL
     } type;
-    int number;
     std::unique_ptr<BaseAST> add_exp;
     std::string op;
     std::unique_ptr<BaseAST> rel_exp;
@@ -200,11 +195,9 @@ class EqExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         REL,
         EQ
     } type;
-    int number;
     std::unique_ptr<BaseAST> rel_exp;
     std::string op;
     std::unique_ptr<BaseAST> eq_exp;
@@ -217,11 +210,9 @@ class LAndExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         EQ,
         LAND
     } type;
-    int number;
     std::unique_ptr<BaseAST> eq_exp;
     std::unique_ptr<BaseAST> land_exp;
 
@@ -233,11 +224,9 @@ class LOrExpAST : public BaseAST
 public:
     enum Type
     {
-        NUMBER,
         LAND,
         LOR
     } type;
-    int number;
     std::unique_ptr<BaseAST> land_exp;
     std::unique_ptr<BaseAST> lor_exp;
 
@@ -280,7 +269,7 @@ class ConstDefAST : public BaseAST
 {
 public:
     std::string ident;
-    int const_init_val;
+    std::unique_ptr<BaseAST> const_init_val;
 
     void* toRaw() const override;
 };
@@ -295,17 +284,18 @@ public:
     void* toRaw() const override;
 };
 
+class ConstInitValAST : public BaseAST
+{
+public:
+    std::unique_ptr<BaseAST> const_exp;
+
+    void* toRaw() const override;
+};
+
 class InitValAST : public BaseAST
 {
 public:
-    enum Type
-    {
-        EXP,
-        NUMBER
-    } type;
-    int number;
     std::unique_ptr<BaseAST> exp;
-
     void* toRaw() const override;
 };
 
