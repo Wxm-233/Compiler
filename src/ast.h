@@ -33,6 +33,7 @@ public:
     static koopa_raw_slice_t combine_slices(koopa_raw_slice_t& s1, koopa_raw_slice_t& s2);
     static void filter_basic_block(koopa_raw_basic_block_data_t* bb);
     static koopa_raw_value_data_t* build_branch(koopa_raw_value_data* cond, koopa_raw_basic_block_data_t* true_bb, koopa_raw_basic_block_data_t* false_bb);
+    static void append_jump(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa_raw_value_data_t* jmp);
 };
 
 // CompUnit 是 BaseAST

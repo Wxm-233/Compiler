@@ -26,7 +26,7 @@ char* BaseAST::build_ident(const std::string& ident, char c)
     return name;
 }
 
-// 其实不需要写used_by，哈哈
+// 其实不需要写used_by，哈哈，这个只是个充样子的函数
 void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user)
 {
     value->used_by.kind = KOOPA_RSIK_VALUE;
@@ -133,7 +133,20 @@ koopa_raw_value_data_t* BaseAST::build_branch(koopa_raw_value_data* cond, koopa_
     raw_stmt->kind.data.branch.true_args.buffer = nullptr;
     raw_stmt->kind.data.branch.true_args.len = 0;
     raw_stmt->kind.data.branch.true_args.kind = KOOPA_RSIK_VALUE;
+
     return raw_stmt;
+}
+
+void BaseAST::append_jump(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa_raw_value_data_t* jmp)
+{
+    auto end_bb = bbs->back();
+    end_bb->insts.len += 1;
+    auto buffer = new const void*[end_bb->insts.len];
+    for (int i = 0; i < end_bb->insts.len - 1; i++) {
+        buffer[i] = end_bb->insts.buffer[i];
+    }
+    buffer[end_bb->insts.len-1] = jmp;
+    end_bb->insts.buffer = buffer;
 }
 
 void *CompUnitAST::toRaw() const
@@ -285,17 +298,8 @@ void *OpenStmtAST::toRaw() const
             auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)stmt->toRaw();
-            { // true_bbs
-                auto end_bb = true_bbs->back();
-                end_bb->insts.len += 1;
-                auto buffer = new const void*[end_bb->insts.len];
-                for (int i = 0; i < end_bb->insts.len - 1; i++) {
-                    buffer[i] = end_bb->insts.buffer[i];
-                }
-                buffer[end_bb->insts.len - 1] = raw_jmp;
-                end_bb->insts.buffer = buffer;
-                true_bbs->front()->name = "%then";
-            }
+            append_jump(true_bbs, raw_jmp);
+            true_bbs->front()->name = "%then";
             auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
             assert(insts_exp->size() > 0);
             auto value = insts_exp->back();
@@ -317,29 +321,11 @@ void *OpenStmtAST::toRaw() const
             auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
-            { // true_bbs
-                auto end_bb = true_bbs->back();
-                end_bb->insts.len += 1;
-                auto buffer = new const void*[end_bb->insts.len];
-                for (int i = 0; i < end_bb->insts.len - 1; i++) {
-                    buffer[i] = end_bb->insts.buffer[i];
-                }
-                buffer[end_bb->insts.len - 1] = raw_jmp;
-                end_bb->insts.buffer = buffer;
-                true_bbs->front()->name = "%then";
-            }
+            append_jump(true_bbs, raw_jmp);
+            true_bbs->front()->name = "%then";
             auto false_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)open_stmt->toRaw();
-            { // false_bbs
-                auto end_bb = false_bbs->back();
-                end_bb->insts.len += 1;
-                auto buffer = new const void*[end_bb->insts.len];
-                for (int i = 0; i < end_bb->insts.len - 1; i++) {
-                    buffer[i] = end_bb->insts.buffer[i];
-                }
-                buffer[end_bb->insts.len - 1] = raw_jmp;
-                end_bb->insts.buffer = buffer;
-                false_bbs->front()->name = "%else";
-            }
+            append_jump(false_bbs, raw_jmp);
+            false_bbs->front()->name = "%else";
             auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
             assert(insts_exp->size() > 0);
             auto value = insts_exp->back();
@@ -380,29 +366,11 @@ void *ClosedStmtAST::toRaw() const
             auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
-            { // true_bbs
-                auto end_bb = true_bbs->back();
-                end_bb->insts.len += 1;
-                auto buffer = new const void*[end_bb->insts.len];
-                for (int i = 0; i < end_bb->insts.len - 1; i++) {
-                    buffer[i] = end_bb->insts.buffer[i];
-                }
-                buffer[end_bb->insts.len - 1] = raw_jmp;
-                end_bb->insts.buffer = buffer;
-                true_bbs->front()->name = "%then";
-            }
+            append_jump(true_bbs, raw_jmp);
+            true_bbs->front()->name = "%then";
             auto false_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt2->toRaw();
-            { // false_bbs
-                auto end_bb = false_bbs->back();
-                end_bb->insts.len += 1;
-                auto buffer = new const void*[end_bb->insts.len];
-                for (int i = 0; i < end_bb->insts.len - 1; i++) {
-                    buffer[i] = end_bb->insts.buffer[i];
-                }
-                buffer[end_bb->insts.len - 1] = raw_jmp;
-                end_bb->insts.buffer = buffer;
-                false_bbs->front()->name = "%else";
-            }
+            append_jump(false_bbs, raw_jmp);
+            false_bbs->front()->name = "%else";
             auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
             assert(insts_exp->size() > 0);
             auto value = insts_exp->back();
