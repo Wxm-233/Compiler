@@ -325,7 +325,7 @@ void *OpenStmtAST::toRaw() const
                 }
                 buffer[end_bb->insts.len - 1] = raw_jmp;
                 end_bb->insts.buffer = buffer;
-                true_bbs->front()->name = "%else";
+                false_bbs->front()->name = "%else";
             }
             auto raw_stmt = new koopa_raw_value_data_t;
             auto ty = new koopa_raw_type_kind_t;
