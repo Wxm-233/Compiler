@@ -4,7 +4,6 @@
 #include <string>
 #include <cstring>
 #include <map>
-
 // 函数声明略
 // ...
 
@@ -145,8 +144,7 @@ void Visit(const koopa_raw_function_t &func)
 void Visit(const koopa_raw_basic_block_t &bb)
 {
     // 执行一些其他的必要操作
-    if (strncmp(bb->name+1, "entry", 5))
-        std::cout << "entry:" << std::endl;
+    std::cout << bb->name + 1 << ":" << std::endl;
     // ...
     // 访问所有指令
     Visit(bb->insts);
@@ -185,6 +183,14 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_LOAD:
         // 访问 load 指令
         Visit(kind.data.load, value);
+        break;
+    case KOOPA_RVT_BRANCH:
+        // 访问 branch 指令
+        Visit(kind.data.branch);
+        break;
+    case KOOPA_RVT_JUMP:
+        // 访问 jump 指令
+        Visit(kind.data.jump);
         break;
     default:
         // 其他类型暂时遇不到
@@ -388,4 +394,26 @@ void Visit_alloc(koopa_raw_value_t value)
 {
     Stack::Insert(value, current_loc);
     current_loc += 4;
+}
+
+// 访问branch指令
+void Visit(const koopa_raw_branch_t &branch)
+{
+    if (branch.cond->kind.tag == KOOPA_RVT_INTEGER) {
+        if (branch.cond->kind.data.integer.value) {
+            std::cout << "  j " << branch.true_bb->name + 1 << std::endl;
+        } else {
+            std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
+        }
+    } else {
+        std::cout << "  lw t0, " << Stack::Query(branch.cond) << "(sp)" << std::endl;
+        std::cout << "  bnez t0, " << branch.true_bb->name + 1 << std::endl;
+        std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
+    }
+}
+
+// 访问jump指令
+void Visit(const koopa_raw_jump_t &jump)
+{
+    std::cout << "  j " << jump.target->name + 1 << std::endl;
 }

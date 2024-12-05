@@ -58,12 +58,19 @@ int main(int argc, const char *argv[])
 	}
 	else if (std::string(mode) == "-riscv")
 	{
+		unsigned long length = 20000;
+		char buffer[length];
+		koopa_dump_to_string(program, buffer, &length); // dump到字符串
+		// std::clog << buffer << std::endl;
+		koopa_program_t program_new;
+		koopa_error_code ret = koopa_parse_from_string(buffer, &program_new);
+		assert(ret == KOOPA_EC_SUCCESS); //确保解析正确
 		// 创建一个 raw program builder, 用来构建 raw program
 		koopa_raw_program_builder_t builder = koopa_new_raw_program_builder();
 		// 将 Koopa IR 程序转换为 raw program
-		koopa_raw_program_t raw = koopa_build_raw_program(builder, program);
+		koopa_raw_program_t raw = koopa_build_raw_program(builder, program_new);
 		// 释放 Koopa IR 程序占用的内存
-		koopa_delete_program(program);
+		koopa_delete_program(program_new);
 
 		// 处理 raw program
 		// ...
