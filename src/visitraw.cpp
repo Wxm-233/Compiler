@@ -130,8 +130,14 @@ void Visit(const koopa_raw_function_t &func)
     }
     stack_frame_length = (4 * insts_on_stack + 15) / 16 * 16;
 
-    if (stack_frame_length > 0)
-        std::cout << "  add sp, sp, " << -stack_frame_length << std::endl;
+    if (stack_frame_length > 0) {
+        if (stack_frame_length < 2048)
+            std::cout << "  addi sp, sp, " << -stack_frame_length << std::endl;
+        else {
+            std::cout << "  li t0, " << -stack_frame_length << std::endl;
+            std::cout << "  add sp, sp, t0" << std::endl;
+        }
+    }
 
     current_loc = 0;
     loc_map = std::map<koopa_raw_value_t, int>();
@@ -214,7 +220,14 @@ void Visit(const koopa_raw_return_t &ret)
             std::cout << "  lw a0, " << Stack::Query(ret.value) << "(sp)" << std::endl;
         }
     }
-    std::cout << "  addi sp, sp, " << stack_frame_length << std::endl;
+    if (stack_frame_length > 0) {
+        if (stack_frame_length < 2048)
+            std::cout << "  addi sp, sp, " << stack_frame_length << std::endl;
+        else {
+            std::cout << "  li t0, " << stack_frame_length << std::endl;
+            std::cout << "  add sp, sp, t0" << std::endl;
+        }
+    }
     std::cout << "  ret" << std::endl;
 }
 

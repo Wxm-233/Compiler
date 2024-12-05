@@ -972,7 +972,8 @@ void *LAndExpAST::toRaw() const // (x && y) --> (x != 0) & (y != 0) (x)
     return left_insts;
 }
 
-void *LOrExpAST::toRaw() const // (x || y) --> (x|y != 0)
+void *LOrExpAST::toRaw() const  // (x || y) --> (x|y != 0) (x)
+                                // (x || y) --> if (x == 1) return 1; else return y;
 {
     if (type == LAND)
         return land_exp->toRaw();
