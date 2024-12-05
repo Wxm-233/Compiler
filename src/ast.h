@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <cstring>
 #include <memory>
 #include <iostream>
 #include <cassert>
@@ -29,6 +30,8 @@ public:
     static void set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user);
     static koopa_raw_basic_block_data_t* build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name);
     static koopa_raw_value_data_t* build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user);
+    static koopa_raw_slice_t combine_slices(koopa_raw_slice_t& s1, koopa_raw_slice_t& s2);
+    static void filter_basic_block(koopa_raw_basic_block_data_t* bb);
 };
 
 // CompUnit 是 BaseAST
