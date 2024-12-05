@@ -52,6 +52,26 @@ int alloc_reg(const koopa_raw_value_t &value)
     return pos;
 }
 
+void lw_safe(std::string reg, int loc) {
+    if (loc < 2048) {
+        std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li t0, " << loc << std::endl;
+        std::cout << "  add t0, sp, t0" << std::endl;
+        std::cout << "  lw " << reg << ", 0(t0)" << std::endl;
+    }
+}
+
+void sw_safe(std::string reg, int loc) {
+    if (loc < 2048) {
+        std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li t0, " << loc << std::endl;
+        std::cout << "  add t0, sp, t0" << std::endl;
+        std::cout << "  sw " << reg << ", 0(t0)" << std::endl;
+    }
+}
+
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
 {
@@ -217,7 +237,7 @@ void Visit(const koopa_raw_return_t &ret)
         }
         else {
             // std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
-            std::cout << "  lw a0, " << Stack::Query(ret.value) << "(sp)" << std::endl;
+            lw_safe("a0", Stack::Query(ret.value));
         }
     }
     if (stack_frame_length > 0) {
@@ -245,12 +265,12 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
     if (binary.lhs->kind.tag == KOOPA_RVT_INTEGER) {
         std::cout << "  li t0, " << binary.lhs->kind.data.integer.value << std::endl;
     } else {
-        std::cout << "  lw t0, " << Stack::Query(binary.lhs) << "(sp)" << std::endl;
+        lw_safe("t0", Stack::Query(binary.lhs));
     }
     if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER) {
         std::cout << "  li t1, " << binary.rhs->kind.data.integer.value << std::endl;
     } else {
-        std::cout << "  lw t1, " << Stack::Query(binary.rhs) << "(sp)" << std::endl;
+        lw_safe("t1", Stack::Query(binary.rhs));
     }
     // int left_pos = use_inst(binary.lhs);
     // int right_pos = use_inst(binary.rhs);
@@ -315,7 +335,7 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
         default:
             assert(false);
     }
-    std::cout << "  sw t0, " << current_loc << "(sp)" << std::endl;
+    sw_safe("t0", current_loc);
 
     Stack::Insert(value, current_loc);
     current_loc += 4;
@@ -388,16 +408,16 @@ void Visit(const koopa_raw_store_t &store)
     if (store.value->kind.tag == KOOPA_RVT_INTEGER) {
         std::cout << "  li t0, " << store.value->kind.data.integer.value << std::endl;
     } else {
-        std::cout << "  lw t0, " << Stack::Query(store.value) << "(sp)" << std::endl;
+        lw_safe("t0", Stack::Query(store.value));
     }
-    std::cout << "  sw t0, " << Stack::Query(store.dest) << "(sp)" << std::endl;
+    sw_safe("t0", Stack::Query(store.dest));
 }
 
 // 访问 load 指令
 void Visit(const koopa_raw_load_t &load, koopa_raw_value_t value)
 {
-    std::cout << "  lw t0, " << Stack::Query(load.src) << "(sp)" << std::endl;
-    std::cout << "  sw t0, " << current_loc << "(sp)" << std::endl;
+    lw_safe("t0", Stack::Query(load.src));
+    sw_safe("t0", current_loc);
     Stack::Insert(value, current_loc);
     current_loc += 4;
 }
@@ -419,7 +439,7 @@ void Visit(const koopa_raw_branch_t &branch)
             std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
         }
     } else {
-        std::cout << "  lw t0, " << Stack::Query(branch.cond) << "(sp)" << std::endl;
+        lw_safe("t0", Stack::Query(branch.cond));
         std::cout << "  bnez t0, " << branch.true_bb->name + 1 << std::endl;
         std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
     }
