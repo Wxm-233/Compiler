@@ -301,7 +301,7 @@ void *OpenStmtAST::toRaw() const
         }
         case IF_ELSE:
         {
-            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), nullptr);
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
             { // true_bbs
@@ -380,7 +380,7 @@ void *ClosedStmtAST::toRaw() const
         }
         case IF_ELSE:
         {
-            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), nullptr);
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
             { // true_bbs
