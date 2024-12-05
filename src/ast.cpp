@@ -165,6 +165,20 @@ void *FuncDefAST::toRaw() const
         filter_basic_block(vec_bbs->at(i));
         raw_function->bbs.buffer[i] = vec_bbs->at(i);
     }
+    auto last_bb = (koopa_raw_basic_block_data_t*)raw_function->bbs.buffer[raw_function->bbs.len-1];
+    if (last_bb->insts.len == 0) {
+        last_bb->insts.len = 1;
+        last_bb->insts.buffer = new const void*[last_bb->insts.len];
+        last_bb->insts.kind = KOOPA_RSIK_VALUE;
+        auto raw_ret = new koopa_raw_value_data;
+        auto ty = new koopa_raw_type_kind_t;
+        ty->tag = KOOPA_RTT_UNIT;
+        raw_ret->ty = ty;
+        raw_ret->name = nullptr;
+        raw_ret->kind.tag = KOOPA_RVT_RETURN;
+        raw_ret->kind.data.ret.value = nullptr;
+        last_bb->insts.buffer[0] = raw_ret;
+    }
     return raw_function;
 }
 
@@ -301,7 +315,7 @@ void *OpenStmtAST::toRaw() const
         }
         case IF_ELSE:
         {
-            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), nullptr);
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
             { // true_bbs
@@ -380,7 +394,7 @@ void *ClosedStmtAST::toRaw() const
         }
         case IF_ELSE:
         {
-            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), nullptr);
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
             auto raw_jmp = build_jump(end_bb, nullptr);
             auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
             { // true_bbs
