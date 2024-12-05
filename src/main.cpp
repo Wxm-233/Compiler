@@ -63,7 +63,7 @@ int main(int argc, const char *argv[])
 		koopa_dump_to_string(program, buffer, &length); // dump到字符串
 		// std::clog << buffer << std::endl;
 		koopa_program_t program_new;
-		koopa_error_code ret = koopa_parse_from_string(buffer, &program_new);
+		koopa_error_code_t ret = koopa_parse_from_string(buffer, &program_new);
 		assert(ret == KOOPA_EC_SUCCESS); //确保解析正确
 		// 创建一个 raw program builder, 用来构建 raw program
 		koopa_raw_program_builder_t builder = koopa_new_raw_program_builder();
