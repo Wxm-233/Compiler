@@ -12,7 +12,7 @@ class CompUnitAST;
 class FuncDefAST;
 class FuncTypeAST;
 class BlockAST;
-class StmtAST;
+class SimpleStmtAST;
 class ExpAST;
 class PrimaryExpAST;
 class UnaryExpAST;
@@ -27,6 +27,8 @@ public:
     static koopa_raw_value_data_t* build_number(int number, koopa_raw_value_data_t* user);
     static char* build_ident(const std::string& ident);
     static void set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user);
+    static koopa_raw_basic_block_data_t* build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name);
+    static koopa_raw_value_data_t* build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user);
 };
 
 // CompUnit 是 BaseAST
@@ -80,6 +82,54 @@ public:
 };
 
 class StmtAST : public BaseAST
+{
+public:
+    enum Type {
+        OPEN_STMT,
+        CLOSED_STMT
+    } type;
+
+    std::unique_ptr<BaseAST> open_stmt;
+    std::unique_ptr<BaseAST> closed_stmt;
+
+    void* toRaw() const override;
+};
+
+class OpenStmtAST : public BaseAST
+{
+public:
+    enum Type {
+        IF,
+        IF_ELSE,
+        WHILE
+    } type;
+
+    std::unique_ptr<BaseAST> exp;
+    std::unique_ptr<BaseAST> stmt;
+    std::unique_ptr<BaseAST> closed_stmt;
+    std::unique_ptr<BaseAST> open_stmt;
+
+    void* toRaw() const override;
+};
+
+class ClosedStmtAST : public BaseAST
+{
+public:
+    enum Type {
+        SIMPLE_STMT,
+        IF_ELSE,
+        WHILE
+    } type;
+
+    std::unique_ptr<BaseAST> exp;
+    std::unique_ptr<BaseAST> simple_stmt;
+    std::unique_ptr<BaseAST> closed_stmt;
+    std::unique_ptr<BaseAST> closed_stmt2;
+
+    void* toRaw() const override;
+};
+
+class SimpleStmtAST : public BaseAST
 {
 public:
     enum Type {

@@ -33,6 +33,48 @@ void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t*
     value->used_by.len = 0;
 }
 
+koopa_raw_basic_block_data_t* BaseAST::build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name)
+{
+    auto raw_block = new koopa_raw_basic_block_data_t;
+
+    if (block_name != nullptr)
+        raw_block->name = build_ident(block_name);
+    else raw_block->name = nullptr;
+
+    raw_block->params.buffer = nullptr;
+    raw_block->params.len = 0;
+    raw_block->params.kind = KOOPA_RSIK_VALUE;
+
+    raw_block->used_by.buffer = nullptr;
+    raw_block->used_by.len = 0;
+    raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+
+    raw_block->insts.kind = KOOPA_RSIK_VALUE;
+    raw_block->insts.len = insts->size();
+    raw_block->insts.buffer = new const void*[raw_block->insts.len];
+    for (int i = 0; i < insts->size(); i++) {
+        raw_block->insts.buffer[i] = insts->at(i);
+    }
+
+    return raw_block;
+}
+
+koopa_raw_value_data_t* BaseAST::build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user)
+{
+    auto raw_jump = new koopa_raw_value_data_t;
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_UNIT;
+    raw_jump->ty = ty;
+
+    raw_jump->name = nullptr;
+    raw_jump->kind.tag = KOOPA_RVT_JUMP;
+    raw_jump->kind.data.jump.target = target;
+
+    set_used_by(raw_jump, user);
+
+    return raw_jump;
+}
+
 void *CompUnitAST::toRaw() const
 {
     auto raw_program = new koopa_raw_program_t;
@@ -69,10 +111,14 @@ void *FuncDefAST::toRaw() const
 
     Symbol::enter_scope();
 
-    raw_function->bbs.len = 1;
+    auto bbs = (koopa_raw_basic_block_data_t*)block->toRaw();
+
+    raw_function->bbs.len = bbs->insts.len;
     raw_function->bbs.buffer = new const void*[raw_function->bbs.len];
     raw_function->bbs.kind = KOOPA_RSIK_BASIC_BLOCK;
-    raw_function->bbs.buffer[0] = block->toRaw();
+    for (int i = 0; i < bbs->insts.len; i++) {
+        raw_function->bbs.buffer[i] = bbs->insts.buffer[i];
+    }
 
     return raw_function;
 }
@@ -107,35 +153,20 @@ void *BlockAST::toRaw() const
     raw_block->used_by.len = 0;
     raw_block->used_by.kind = KOOPA_RSIK_VALUE;
 
-    raw_block->insts.kind = KOOPA_RSIK_VALUE;
-    auto insts_vec = new std::vector<koopa_raw_value_data*>();
-    int index = 0;
-    bool return_detected = false;
-    for (auto &i : *block_item_list) {
-        auto ret_vec = (std::vector<koopa_raw_value_data*>*)i->toRaw();
-        if (ret_vec == nullptr)
-            continue;
-        for (auto &j : *ret_vec) {
-            // 判断条件正确吗？
-            if (j == nullptr || j->kind.tag != KOOPA_RVT_INTEGER) {
-                insts_vec->push_back(j);
-                index++;
-            }
-            if (j->kind.tag == KOOPA_RVT_RETURN) {
-                return_detected = true;
-                break;
-            }
+    raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+    std::vector<koopa_raw_basic_block_data_t*> block_item_vec;
+    for (int i = 0; i < block_item_list->size(); i++) {
+        auto block_item_block = (koopa_raw_basic_block_data_t*)block_item_list->at(i)->toRaw();
+        for (int j = 0; j < block_item_block->insts.len; j++) {
+            block_item_vec.push_back((koopa_raw_basic_block_data_t*)block_item_block->insts.buffer[j]);
         }
-        if (return_detected)
-            break;
     }
-    raw_block->insts.len = index;
+    raw_block->insts.len = block_item_vec.size();
     raw_block->insts.buffer = new const void*[raw_block->insts.len];
-    index = 0;
-    for (auto inst: *insts_vec) {
-        raw_block->insts.buffer[index++] = inst;
+    int index = 0;
+    for (auto block_item : block_item_vec) {
+        raw_block->insts.buffer[index++] = block_item;
     }
-
     return raw_block;
 }
 
@@ -143,7 +174,22 @@ void *BlockItemAST::toRaw() const
 {
     switch (type) {
         case DECL:
-            return decl->toRaw();
+        {
+            auto raw_value_block = build_block_from_insts((std::vector<koopa_raw_value_data*>*)decl->toRaw(), nullptr);
+            auto raw_block = new koopa_raw_basic_block_data_t;
+            raw_block->name = nullptr;
+            raw_block->params.buffer = nullptr;
+            raw_block->params.len = 0;
+            raw_block->params.kind = KOOPA_RSIK_VALUE;
+            raw_block->used_by.buffer = nullptr;
+            raw_block->used_by.len = 0;
+            raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+            raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+            raw_block->insts.len = 1;
+            raw_block->insts.buffer = new const void*[raw_block->insts.len];
+            raw_block->insts.buffer[0] = raw_value_block;
+            return raw_block;
+        }
         case STMT:
             return stmt->toRaw();
         default:
@@ -152,6 +198,236 @@ void *BlockItemAST::toRaw() const
 }
 
 void *StmtAST::toRaw() const
+{
+    switch (type)
+    {
+        case OPEN_STMT:
+            return open_stmt->toRaw();
+        case CLOSED_STMT:
+            return closed_stmt->toRaw();
+        default:
+            assert(false);
+    }
+}
+
+void *OpenStmtAST::toRaw() const
+{
+    switch (type) {
+        case IF:
+        {
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto raw_jmp = build_jump(end_bb, nullptr);
+            auto true_bb = (koopa_raw_basic_block_data_t*)stmt->toRaw();
+            { // true_bb
+                auto end_bb = (koopa_raw_basic_block_data_t*)true_bb->insts.buffer[true_bb->insts.len - 1];
+                end_bb->insts.len += 1;
+                auto buffer = new const void*[end_bb->insts.len];
+                for (int i = 0; i < end_bb->insts.len - 1; i++) {
+                    buffer[i] = end_bb->insts.buffer[i];
+                }
+                buffer[end_bb->insts.len - 1] = raw_jmp;
+                end_bb->insts.buffer = buffer;
+                true_bb->name = build_ident("%then");
+            }
+            auto raw_stmt = new koopa_raw_value_data_t;
+            auto ty = new koopa_raw_type_kind_t;
+            ty->tag = KOOPA_RTT_INT32;
+            raw_stmt->ty = ty;
+            raw_stmt->name = nullptr;
+            set_used_by(raw_stmt, nullptr);
+            raw_stmt->kind.tag = KOOPA_RVT_BRANCH;
+            auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
+            assert(insts_exp->size() > 0);
+            auto value = *insts_exp->rbegin();
+            set_used_by(value, raw_stmt);
+            raw_stmt->kind.data.branch.cond = value;
+            raw_stmt->kind.data.branch.true_bb = true_bb;
+            raw_stmt->kind.data.branch.false_bb = end_bb;
+            insts_exp->push_back(raw_stmt);
+            auto if_bb = build_block_from_insts(insts_exp, nullptr);
+
+            auto raw_block = new koopa_raw_basic_block_data_t;
+            raw_block->name = nullptr;
+            raw_block->params.buffer = nullptr;
+            raw_block->params.len = 0;
+            raw_block->params.kind = KOOPA_RSIK_VALUE;
+            raw_block->used_by.buffer = nullptr;
+            raw_block->used_by.len = 0;
+            raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+            raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+            raw_block->insts.len = 3;
+            raw_block->insts.buffer = new const void*[raw_block->insts.len];
+            raw_block->insts.buffer[0] = if_bb;
+            raw_block->insts.buffer[1] = true_bb;
+            raw_block->insts.buffer[2] = end_bb;
+            
+            return raw_block;
+        }
+        case IF_ELSE:
+        {
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto raw_jmp = build_jump(end_bb, nullptr);
+            auto true_bb = (koopa_raw_basic_block_data_t*)closed_stmt->toRaw();
+            { // true_bb
+                auto end_bb = (koopa_raw_basic_block_data_t*)true_bb->insts.buffer[true_bb->insts.len - 1];
+                end_bb->insts.len += 1;
+                auto buffer = new const void*[end_bb->insts.len];
+                for (int i = 0; i < end_bb->insts.len - 1; i++) {
+                    buffer[i] = end_bb->insts.buffer[i];
+                }
+                buffer[end_bb->insts.len - 1] = raw_jmp;
+                end_bb->insts.buffer = buffer;
+                true_bb->name = build_ident("%then");
+            }
+            auto false_bb = (koopa_raw_basic_block_data_t*)open_stmt->toRaw();
+            { // false_bb
+                auto end_bb = (koopa_raw_basic_block_data_t*)false_bb->insts.buffer[false_bb->insts.len - 1];
+                end_bb->insts.len += 1;
+                auto buffer = new const void*[end_bb->insts.len];
+                for (int i = 0; i < end_bb->insts.len - 1; i++) {
+                    buffer[i] = end_bb->insts.buffer[i];
+                }
+                buffer[end_bb->insts.len - 1] = raw_jmp;
+                end_bb->insts.buffer = buffer;
+                false_bb->name = build_ident("%else");
+            }
+            auto raw_stmt = new koopa_raw_value_data_t;
+            auto ty = new koopa_raw_type_kind_t;
+            ty->tag = KOOPA_RTT_INT32;
+            raw_stmt->ty = ty;
+            raw_stmt->name = nullptr;
+            set_used_by(raw_stmt, nullptr);
+            raw_stmt->kind.tag = KOOPA_RVT_BRANCH;
+            auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
+            assert(insts_exp->size() > 0);
+            auto value = *insts_exp->rbegin();
+            set_used_by(value, raw_stmt);
+            raw_stmt->kind.data.branch.cond = value;
+            raw_stmt->kind.data.branch.true_bb = true_bb;
+            raw_stmt->kind.data.branch.false_bb = false_bb;
+            insts_exp->push_back(raw_stmt);
+            auto if_bb = build_block_from_insts(insts_exp, nullptr);
+
+            auto raw_block = new koopa_raw_basic_block_data_t;
+            raw_block->name = nullptr;
+            raw_block->params.buffer = nullptr;
+            raw_block->params.len = 0;
+            raw_block->params.kind = KOOPA_RSIK_VALUE;
+            raw_block->used_by.buffer = nullptr;
+            raw_block->used_by.len = 0;
+            raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+            raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+            raw_block->insts.len = 4;
+            raw_block->insts.buffer = new const void*[raw_block->insts.len];
+            raw_block->insts.buffer[0] = if_bb;
+            raw_block->insts.buffer[1] = true_bb;
+            raw_block->insts.buffer[2] = false_bb;
+            raw_block->insts.buffer[3] = end_bb;
+
+            return raw_block;
+        }
+        case WHILE:
+        {
+            // do nothing for now
+        }
+        default:
+            assert(false);
+    }
+}
+
+void *ClosedStmtAST::toRaw() const
+{
+    switch (type) {
+        case SIMPLE_STMT:
+        {
+            auto raw_value_block = build_block_from_insts((std::vector<koopa_raw_value_data*>*)simple_stmt->toRaw(), nullptr);
+            auto raw_block = new koopa_raw_basic_block_data_t;
+            raw_block->name = nullptr;
+            raw_block->params.buffer = nullptr;
+            raw_block->params.len = 0;
+            raw_block->params.kind = KOOPA_RSIK_VALUE;
+            raw_block->used_by.buffer = nullptr;
+            raw_block->used_by.len = 0;
+            raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+            raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+            raw_block->insts.len = 1;
+            raw_block->insts.buffer = new const void*[raw_block->insts.len];
+            raw_block->insts.buffer[0] = raw_value_block;
+            return raw_block;
+        }
+        case IF_ELSE:
+        {
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto raw_jmp = build_jump(end_bb, nullptr);
+            auto true_bb = (koopa_raw_basic_block_data_t*)closed_stmt->toRaw();
+            { // true_bb
+                auto end_bb = (koopa_raw_basic_block_data_t*)true_bb->insts.buffer[true_bb->insts.len - 1];
+                end_bb->insts.len += 1;
+                auto buffer = new const void*[end_bb->insts.len];
+                for (int i = 0; i < end_bb->insts.len - 1; i++) {
+                    buffer[i] = end_bb->insts.buffer[i];
+                }
+                buffer[end_bb->insts.len - 1] = raw_jmp;
+                end_bb->insts.buffer = buffer;
+                true_bb->name = build_ident("%then");
+            }
+            auto false_bb = (koopa_raw_basic_block_data_t*)closed_stmt2->toRaw();
+            { // false_bb
+                auto end_bb = (koopa_raw_basic_block_data_t*)false_bb->insts.buffer[false_bb->insts.len - 1];
+                end_bb->insts.len += 1;
+                auto buffer = new const void*[end_bb->insts.len];
+                for (int i = 0; i < end_bb->insts.len - 1; i++) {
+                    buffer[i] = end_bb->insts.buffer[i];
+                }
+                buffer[end_bb->insts.len - 1] = raw_jmp;
+                end_bb->insts.buffer = buffer;
+                false_bb->name = build_ident("%else");
+            }
+            auto raw_stmt = new koopa_raw_value_data_t;
+            auto ty = new koopa_raw_type_kind_t;
+            ty->tag = KOOPA_RTT_INT32;
+            raw_stmt->ty = ty;
+            raw_stmt->name = nullptr;
+            set_used_by(raw_stmt, nullptr);
+            raw_stmt->kind.tag = KOOPA_RVT_BRANCH;
+            auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
+            assert(insts_exp->size() > 0);
+            auto value = *insts_exp->rbegin();
+            set_used_by(value, raw_stmt);
+            raw_stmt->kind.data.branch.cond = value;
+            raw_stmt->kind.data.branch.true_bb = true_bb;
+            raw_stmt->kind.data.branch.false_bb = false_bb;
+            insts_exp->push_back(raw_stmt);
+            auto if_bb = build_block_from_insts(insts_exp, nullptr);
+
+            auto raw_block = new koopa_raw_basic_block_data_t;
+            raw_block->name = nullptr;
+            raw_block->params.buffer = nullptr;
+            raw_block->params.len = 0;
+            raw_block->params.kind = KOOPA_RSIK_VALUE;
+            raw_block->used_by.buffer = nullptr;
+            raw_block->used_by.len = 0;
+            raw_block->used_by.kind = KOOPA_RSIK_VALUE;
+            raw_block->insts.kind = KOOPA_RSIK_BASIC_BLOCK;
+            raw_block->insts.len = 4;
+            raw_block->insts.buffer = new const void*[raw_block->insts.len];
+            raw_block->insts.buffer[0] = if_bb;
+            raw_block->insts.buffer[1] = true_bb;
+            raw_block->insts.buffer[2] = false_bb;
+            raw_block->insts.buffer[3] = end_bb;
+
+            return raw_block;
+        }
+        case WHILE:
+        {
+            // do nothing for now
+        }
+        default:
+            assert(false);
+    }
+}
+
+void *SimpleStmtAST::toRaw() const
 {
     auto raw_stmt = new koopa_raw_value_data_t;
 
@@ -210,7 +486,7 @@ void *StmtAST::toRaw() const
             insts->push_back(raw_stmt);
             return insts;
         }
-        case BLOCK:
+        case BLOCK: // 有问题
         {
             Symbol::enter_scope();
             auto insts = new std::vector<koopa_raw_value_data*>();
