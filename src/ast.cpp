@@ -204,7 +204,13 @@ void *FuncDefAST::toRaw() const
         raw_ret->ty = ty;
         raw_ret->name = nullptr;
         raw_ret->kind.tag = KOOPA_RVT_RETURN;
-        raw_ret->kind.data.ret.value = nullptr;
+        if (raw_function->ty->data.function.ret->tag == KOOPA_RTT_UNIT) {
+            raw_ret->kind.data.ret.value = nullptr;
+        }
+        else if (raw_function->ty->data.function.ret->tag == KOOPA_RTT_INT32) {
+            raw_ret->kind.data.ret.value = build_number(0);
+        }
+        else assert(false);
         last_bb->insts.buffer[0] = raw_ret;
     }
     return raw_function;
