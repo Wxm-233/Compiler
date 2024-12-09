@@ -233,6 +233,16 @@ SimpleStmt
     ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
+  | BREAK ';' {
+    auto ast = new SimpleStmtAST();
+    ast->type = SimpleStmtAST::BREAK;
+    $$ = ast;
+  }
+  | CONTINUE ';' {
+    auto ast = new SimpleStmtAST();
+    ast->type = SimpleStmtAST::CONTINUE;
+    $$ = ast;
+  }
   | ';' {
     auto ast = new SimpleStmtAST();
     ast->type = SimpleStmtAST::EMPTY;

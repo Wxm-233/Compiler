@@ -1,7 +1,7 @@
 #include "ast.h"
 #include "symtab.h"
 
-koopa_raw_value_data_t* BaseAST::build_number(int number, koopa_raw_value_data_t* user)
+koopa_raw_value_data_t* BaseAST::build_number(int number, koopa_raw_value_data_t* user = nullptr)
 {
     auto num = new koopa_raw_value_data_t;
     auto num_ty = new koopa_raw_type_kind_t;
@@ -27,14 +27,14 @@ char* BaseAST::build_ident(const std::string& ident, char c)
 }
 
 // 其实不需要写used_by，哈哈，这个只是个充样子的函数
-void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user)
+void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user = nullptr)
 {
     value->used_by.kind = KOOPA_RSIK_VALUE;
     value->used_by.len = 0;
     value->used_by.buffer = nullptr;
 }
 
-koopa_raw_basic_block_data_t* BaseAST::build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name)
+koopa_raw_basic_block_data_t* BaseAST::build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name = nullptr)
 {
     auto raw_block = new koopa_raw_basic_block_data_t;
 
@@ -62,14 +62,14 @@ koopa_raw_basic_block_data_t* BaseAST::build_block_from_insts(std::vector<koopa_
     return raw_block;
 }
 
-koopa_raw_value_data_t* BaseAST::build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user)
+koopa_raw_value_data_t* BaseAST::build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user, const char* name = nullptr)
 {
     auto raw_jump = new koopa_raw_value_data_t;
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_UNIT;
     raw_jump->ty = ty;
 
-    raw_jump->name = nullptr;
+    raw_jump->name = name;
     raw_jump->kind.tag = KOOPA_RVT_JUMP;
     raw_jump->kind.data.jump.target = target;
     raw_jump->kind.data.jump.args.buffer = nullptr;
@@ -103,7 +103,7 @@ void BaseAST::filter_basic_block(koopa_raw_basic_block_data_t* bb)
         auto inst = (koopa_raw_value_data*)bb->insts.buffer[i];
         if (inst != nullptr && inst->kind.tag != KOOPA_RVT_INTEGER)
             insts->push_back(inst);
-        if (inst->kind.tag == KOOPA_RVT_RETURN)
+        if (inst->kind.tag == KOOPA_RVT_RETURN || inst->kind.tag == KOOPA_RVT_BRANCH || inst->kind.tag == KOOPA_RVT_JUMP)
             break;
     }
     bb->insts.len = insts->size();
@@ -347,7 +347,51 @@ void *OpenStmtAST::toRaw() const
         }
         case WHILE:
         {
-            // do nothing for now
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)open_stmt->toRaw();
+            true_bbs->front()->name = "%while_body";
+            auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
+            assert(insts_exp->size() > 0);
+            auto value = insts_exp->back();
+            auto raw_branch = build_branch(value, true_bbs->front(), end_bb);
+            insts_exp->push_back(raw_branch);
+            auto entry_bb = build_block_from_insts(insts_exp, "%while_entry");
+            auto raw_jmp = build_jump(entry_bb, nullptr);
+            append_jump(true_bbs, raw_jmp);
+            auto init_jmp = build_jump(entry_bb, nullptr);
+            auto first_insts = new std::vector<koopa_raw_value_data*>();
+            first_insts->push_back(init_jmp);
+            auto first_bb = build_block_from_insts(first_insts, nullptr);
+
+            for (auto bb : *true_bbs) {
+                for (int i = 0; i < bb->insts.len; i++) {
+                    auto inst = (koopa_raw_value_data*)bb->insts.buffer[i];
+                    if (inst->kind.tag == KOOPA_RVT_JUMP) {
+                        auto jmp = inst;
+                        if (jmp->name == nullptr) {
+                            continue;
+                        }
+                        if (!std::strcmp(jmp->name, "%break")) {
+                            jmp->kind.data.jump.target = end_bb;
+                            jmp->name = nullptr;
+                        }
+                        else if (!std::strcmp(jmp->name, "%continue")) {
+                            jmp->kind.data.jump.target = entry_bb;
+                            jmp->name = nullptr;
+                        }
+                    }
+                }
+            }
+
+            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
+            bbs_vec->push_back(first_bb);
+            bbs_vec->push_back(entry_bb);
+            for (auto bb : *true_bbs) {
+                bbs_vec->push_back(bb);
+            }
+            bbs_vec->push_back(end_bb);
+
+            return bbs_vec;
         }
         default:
             assert(false);
@@ -392,7 +436,51 @@ void *ClosedStmtAST::toRaw() const
         }
         case WHILE:
         {
-            // do nothing for now
+            auto end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
+            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw();
+            true_bbs->front()->name = "%while_body";
+            auto insts_exp = (std::vector<koopa_raw_value_data*>*)exp->toRaw();
+            assert(insts_exp->size() > 0);
+            auto value = insts_exp->back();
+            auto raw_branch = build_branch(value, true_bbs->front(), end_bb);
+            insts_exp->push_back(raw_branch);
+            auto entry_bb = build_block_from_insts(insts_exp, "%while_entry");
+            auto raw_jmp = build_jump(entry_bb, nullptr);
+            append_jump(true_bbs, raw_jmp);
+            auto init_jmp = build_jump(entry_bb, nullptr);
+            auto first_insts = new std::vector<koopa_raw_value_data*>();
+            first_insts->push_back(init_jmp);
+            auto first_bb = build_block_from_insts(first_insts, nullptr);
+
+            for (auto bb : *true_bbs) {
+                for (int i = 0; i < bb->insts.len; i++) {
+                    auto inst = (koopa_raw_value_data*)bb->insts.buffer[i];
+                    if (inst->kind.tag == KOOPA_RVT_JUMP) {
+                        auto jmp = inst;
+                        if (jmp->name == nullptr) {
+                            continue;
+                        }
+                        if (!std::strcmp(jmp->name, "%break")) {
+                            jmp->kind.data.jump.target = end_bb;
+                            jmp->name = nullptr;
+                        }
+                        else if (!std::strcmp(jmp->name, "%continue")) {
+                            jmp->kind.data.jump.target = entry_bb;
+                            jmp->name = nullptr;
+                        }
+                    }
+                }
+            }
+
+            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
+            bbs_vec->push_back(first_bb);
+            bbs_vec->push_back(entry_bb);
+            for (auto bb : *true_bbs) {
+                bbs_vec->push_back(bb);
+            }
+            bbs_vec->push_back(end_bb);
+
+            return bbs_vec;
         }
         default:
             assert(false);
@@ -483,6 +571,24 @@ void *SimpleStmtAST::toRaw() const
             Symbol::enter_scope();
             auto bbs_vec = block->toRaw();
             Symbol::leave_scope();
+            return bbs_vec;
+        }
+        case BREAK:
+        {
+            auto insts = new std::vector<koopa_raw_value_data*>();
+            auto raw_jmp = build_jump(nullptr, nullptr, "%break");
+            insts->push_back(raw_jmp);
+            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
+            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
+            return bbs_vec;
+        }
+        case CONTINUE:
+        {
+            auto insts = new std::vector<koopa_raw_value_data*>();
+            auto raw_jmp = build_jump(nullptr, nullptr, "%continue");
+            insts->push_back(raw_jmp);
+            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
+            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
             return bbs_vec;
         }
         default:
