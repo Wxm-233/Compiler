@@ -6,6 +6,7 @@
 #include <cstring>
 #include "ast.h"
 #include "visitraw.h"
+#include "koopa.h"
 
 // using namespace std;
 
@@ -26,6 +27,19 @@ int main(int argc, const char *argv[])
 	auto input = argv[2];
 	auto output = argv[4];
 
+	// 打开输出文件, 并且指定输出流到这个文件
+	freopen(output, "w", stdout);
+
+	if (std::string(mode) == "-test") {
+		koopa_program_t program;
+		koopa_parse_from_file(input, &program);
+		koopa_raw_program_builder_t builder = koopa_new_raw_program_builder();
+		koopa_raw_program_t raw = koopa_build_raw_program(builder, program);
+		Visit(raw);
+		koopa_dump_to_stdout(program);
+		return 0;
+	}
+
 	// 打开输入文件, 并且指定 lexer 在解析的时候读取这个文件
 	yyin = fopen(input, "r");
 	assert(yyin);
@@ -34,9 +48,6 @@ int main(int argc, const char *argv[])
 	std::unique_ptr<BaseAST> ast;
 	auto retval = yyparse(ast);
 	assert(!retval);
-
-	// 打开输出文件, 并且指定输出流到这个文件
-	freopen(output, "w", stdout);
 
 	auto raw_program = (koopa_raw_program_t*)(ast->toRaw());
 	koopa_program_t program;

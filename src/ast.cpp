@@ -149,6 +149,92 @@ void BaseAST::append_jump(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa
     end_bb->insts.buffer = buffer;
 }
 
+koopa_raw_value_data_t* BaseAST::build_alloc(const char* name)
+{
+    auto raw_alloc = new koopa_raw_value_data_t;
+
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_POINTER;
+    auto raw_base = new koopa_raw_type_kind_t;
+    raw_base->tag = KOOPA_RTT_INT32;
+    ty->data.pointer.base = raw_base;
+
+    raw_alloc->ty = ty;
+    raw_alloc->name = name;
+    set_used_by(raw_alloc, nullptr);
+    raw_alloc->kind.tag = KOOPA_RVT_ALLOC;
+    return raw_alloc;
+}
+
+koopa_raw_value_data_t* BaseAST::build_store(koopa_raw_value_data_t* value, koopa_raw_value_data_t* dest)
+{
+    auto raw_store = new koopa_raw_value_data_t;
+
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_INT32;
+
+    raw_store->ty = ty;
+    raw_store->name = nullptr;
+    set_used_by(raw_store, nullptr);
+    raw_store->kind.tag = KOOPA_RVT_STORE;
+
+    raw_store->kind.data.store.value = value;
+    raw_store->kind.data.store.dest = dest;
+    return raw_store;
+}
+
+koopa_raw_function_data_t* BaseAST::build_function(const char* name, std::vector<std::string> params, std::string ret)
+{
+    auto raw_function = new koopa_raw_function_data_t;
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_FUNCTION;
+    raw_function->params.len = 0;
+    raw_function->params.buffer = nullptr;
+    raw_function->params.kind = KOOPA_RSIK_VALUE;
+    raw_function->bbs.len = 0;
+    raw_function->bbs.buffer = nullptr;
+    raw_function->bbs.kind = KOOPA_RSIK_BASIC_BLOCK;
+
+    ty->data.function.params.len = params.size();
+    ty->data.function.params.buffer = new const void*[params.size()];
+    ty->data.function.params.kind = KOOPA_RSIK_TYPE;
+
+    {
+        auto ret_ty = new koopa_raw_type_kind_t;
+        if (ret == "void") {
+            ret_ty->tag = KOOPA_RTT_UNIT;
+        }
+        else if (ret == "int") {
+            ret_ty->tag = KOOPA_RTT_INT32;
+        }
+        else {
+            assert(false);
+        }
+        ty->data.function.ret = ret_ty;
+    }
+
+    raw_function->ty = ty;
+    raw_function->name = build_ident(name, '@');
+
+    Symbol::insert(name, Symbol::TYPE_FUNCTION, raw_function);
+
+    for (int i = 0; i < params.size(); i++) {
+        auto param = params[i];
+        auto raw_param_ty = new koopa_raw_type_kind_t;
+        if (param == "int")
+            raw_param_ty->tag = KOOPA_RTT_INT32;
+        else if (param == "p2i") {
+            raw_param_ty->tag = KOOPA_RTT_POINTER;
+            auto raw_base = new koopa_raw_type_kind_t;
+            raw_base->tag = KOOPA_RTT_INT32;
+            raw_param_ty->data.pointer.base = raw_base;
+        }
+        ty->data.function.params.buffer[i] = raw_param_ty;
+    }
+
+    return raw_function;
+}
+
 void *CompUnitAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     auto raw_program = new koopa_raw_program_t;
@@ -157,6 +243,15 @@ void *CompUnitAST::toRaw(int n = 0, void* args[] = nullptr) const
     std::vector<koopa_raw_value_data_t*> values;
 
     Symbol::enter_scope();
+
+    funcs.push_back(build_function("getint", {}, "int"));
+    funcs.push_back(build_function("getch", {}, "int"));
+    funcs.push_back(build_function("getarray", {"p2i"}, "int"));
+    funcs.push_back(build_function("putint", {"int"}, "void"));
+    funcs.push_back(build_function("putch", {"int"}, "void"));
+    funcs.push_back(build_function("putarray", {"int", "p2i"}, "void"));
+    funcs.push_back(build_function("starttime", {}, "void"));
+    funcs.push_back(build_function("stoptime", {}, "void"));
 
     for (auto& global_def : *global_def_list) {
         auto def = dynamic_cast<GlobalDefAST*>(global_def.get());
@@ -217,12 +312,12 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     auto raw_function = new koopa_raw_function_data_t;
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_FUNCTION;
-    ty->data.function.params.len = func_f_param_list->size();
+    ty->data.function.params.len = raw_function->params.len = func_f_param_list->size();
     ty->data.function.params.buffer = new const void*[func_f_param_list->size()];
+    raw_function->params.buffer = new const void*[func_f_param_list->size()];
     ty->data.function.params.kind = KOOPA_RSIK_TYPE;
-    for (int i = 0; i < func_f_param_list->size(); i++) {
-        ty->data.function.params.buffer[i] = func_f_param_list->at(i)->toRaw(i);
-    }
+    raw_function->params.kind = KOOPA_RSIK_VALUE;
+
     {
         auto ret_ty = new koopa_raw_type_kind_t;
         if (func_type == "void") {
@@ -238,17 +333,23 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     }
 
     raw_function->ty = ty;
-
     raw_function->name = build_ident(ident, '@');
 
-    raw_function->params.len = 0;
-    raw_function->params.buffer = nullptr;
-    raw_function->params.kind = KOOPA_RSIK_VALUE;
-
     Symbol::insert(ident, Symbol::TYPE_FUNCTION, raw_function);
-
     Symbol::enter_scope();
 
+    auto var_decl_insts = new std::vector<koopa_raw_value_data*>();
+
+    for (int i = 0; i < func_f_param_list->size(); i++) {
+        auto f_param = (koopa_raw_value_data_t*)func_f_param_list->at(i)->toRaw(i);
+        ty->data.function.params.buffer[i] = f_param->ty;
+        raw_function->params.buffer[i] = f_param;
+        auto name = build_ident(f_param->name + 1, '%');
+        auto raw_alloc = build_alloc(name);
+        var_decl_insts->push_back(raw_alloc);
+        var_decl_insts->push_back(build_store(f_param, raw_alloc));
+        Symbol::insert(f_param->name + 1, Symbol::TYPE_VAR, raw_alloc);
+    }
     auto vec_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)block->toRaw(-1);
     raw_function->bbs.len = vec_bbs->size();
     raw_function->bbs.buffer = new const void*[raw_function->bbs.len];
@@ -257,6 +358,11 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
         filter_basic_block(vec_bbs->at(i));
         raw_function->bbs.buffer[i] = vec_bbs->at(i);
     }
+
+    auto first_bb = (koopa_raw_basic_block_data_t*)raw_function->bbs.buffer[0];
+    auto vec_def_bb = build_block_from_insts(var_decl_insts, nullptr);
+    first_bb->insts = combine_slices(vec_def_bb->insts, first_bb->insts);
+
     auto last_bb = (koopa_raw_basic_block_data_t*)raw_function->bbs.buffer[raw_function->bbs.len-1];
     if (last_bb->insts.len == 0) {
         last_bb->insts.len = 1;
@@ -288,7 +394,9 @@ void *FuncFParamAST::toRaw(int n = 0, void* args[] = nullptr) const
     auto raw = new koopa_raw_value_data_t;
     raw->name = build_ident(ident, '@');
     auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_UNIT;
+    if (type == "int")
+        ty->tag = KOOPA_RTT_INT32;
+    else assert(false);
     raw->ty = ty;
     raw->kind.tag = KOOPA_RVT_FUNC_ARG_REF;
     raw->kind.data.func_arg_ref.index = n;
@@ -780,6 +888,7 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         set_used_by(raw, nullptr);
         auto insts = new std::vector<koopa_raw_value_data_t*>();
         auto params = new std::vector<koopa_raw_value_data_t*>();
+        
         for (auto &exp : *func_r_param_list) {
             auto exp_insts = (std::vector<koopa_raw_value_data_t*>*)exp->toRaw();
             params->push_back(exp_insts->back());
@@ -787,10 +896,10 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
                 insts->push_back(inst);
             }
         }
-        raw->kind.data.call.args.len = insts->size();
-        raw->kind.data.call.args.buffer = new const void* [insts->size()];
-        for (int i = 0; i < insts->size(); i++) {
-            raw->kind.data.call.args.buffer[i] = insts->at(i);
+        raw->kind.data.call.args.len = params->size();
+        raw->kind.data.call.args.buffer = new const void* [params->size()];
+        for (int i = 0; i < params->size(); i++) {
+            raw->kind.data.call.args.buffer[i] = params->at(i);
         }
         insts->push_back(raw);
         return insts;
@@ -1303,46 +1412,28 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             raw_zero_init->kind.tag = KOOPA_RVT_ZERO_INIT;
             raw_global_alloc->kind.data.global_alloc.init = raw_zero_init;
         }
+        Symbol::insert(ident, Symbol::TYPE_VAR, raw_global_alloc);
         insts->push_back(raw_global_alloc);
         return insts;
     }
     auto insts = new std::vector<koopa_raw_value_data*>();
 
     // alloc
-    auto raw_alloc = new koopa_raw_value_data_t;
-    
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_POINTER;
-    auto raw_base = new koopa_raw_type_kind_t;
-    raw_base->tag = KOOPA_RTT_INT32;
-    ty->data.pointer.base = raw_base;
-
-    raw_alloc->ty = ty;
-    raw_alloc->name = build_ident(ident, '%');
-    raw_alloc->kind.tag = KOOPA_RVT_ALLOC;
+    auto raw_alloc = build_alloc(build_ident(ident, '%'));
 
     insts->push_back(raw_alloc);
 
     // store
     if (has_init_val) {
-        auto raw_store = new koopa_raw_value_data_t;
-
-        auto ty = new koopa_raw_type_kind_t;
-        ty->tag = KOOPA_RTT_INT32;
-
-        raw_store->ty = ty;
-        raw_store->name = nullptr;
-        raw_store->kind.tag = KOOPA_RVT_STORE;
         auto ret_insts = (std::vector<koopa_raw_value_data*>*)init_val->toRaw();
         assert(ret_insts->size() > 0);
         for (auto inst : *ret_insts) {
             insts->push_back(inst);
         }
         auto value = *ret_insts->rbegin();
-        set_used_by(value, raw_store);
-        set_used_by(raw_alloc, raw_store);
-        raw_store->kind.data.store.value = value;
-        raw_store->kind.data.store.dest = raw_alloc;
+        set_used_by(value);
+        set_used_by(raw_alloc);
+        auto raw_store = build_store(value, raw_alloc);
         insts->push_back(raw_store);
     }
 

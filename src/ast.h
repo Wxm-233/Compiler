@@ -34,6 +34,9 @@ public:
     static void filter_basic_block(koopa_raw_basic_block_data_t* bb);
     static koopa_raw_value_data_t* build_branch(koopa_raw_value_data* cond, koopa_raw_basic_block_data_t* true_bb, koopa_raw_basic_block_data_t* false_bb);
     static void append_jump(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa_raw_value_data_t* jmp);
+    static koopa_raw_value_data_t* build_alloc(const char* name);
+    static koopa_raw_value_data_t* build_store(koopa_raw_value_data_t* value, koopa_raw_value_data_t* dest);
+    static koopa_raw_function_data_t* build_function(const char* name, std::vector<std::string> params, std::string ret_ty);
 };
 
 class CompUnitAST : public BaseAST

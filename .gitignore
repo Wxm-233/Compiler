@@ -3,6 +3,7 @@
 hello.c
 test.cpp
 test.c
+test.o
 a.out
 out
 /src/koopa.h
