@@ -2,6 +2,7 @@
 /build
 hello.c
 test.cpp
+test.c
 a.out
 out
 /src/koopa.h

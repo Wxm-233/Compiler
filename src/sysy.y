@@ -47,59 +47,61 @@ using namespace std;
 %token <int_val> INT_CONST
 
 // 非终结符的类型定义
-%type <ast_val> FuncDef FuncType Block BlockItem Stmt OpenStmt ClosedStmt SimpleStmt
+%type <ast_val> FuncDef Block BlockItem Stmt OpenStmt ClosedStmt SimpleStmt
 %type <ast_val> Exp UnaryExp PrimaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
-%type <ast_val> Decl ConstDecl VarDecl ConstDef VarDef
+%type <ast_val> Decl ConstDecl VarDecl ConstDef VarDef GlobalDef
 %type <ast_val> LVal InitVal ConstInitVal ConstExp
 
 %type <int_val> Number
 
 %type <char_val> UnaryOp MulOp AddOp
 
-%type <str_val> BType
+%type <str_val> Type
 
-%type <vec_val> ConstDefList VarDefList BlockItemList
+%type <vec_val> ConstDefList VarDefList BlockItemList GlobalDefList
 
 %%
 
-// 开始符, CompUnit ::= FuncDef, 大括号后声明了解析完成后 parser 要做的事情
-// 之前我们定义了 FuncDef 会返回一个 str_val, 也就是字符串指针
-// 而 parser 一旦解析完 CompUnit, 就说明所有的 token 都被解析了, 即解析结束了
-// 此时我们应该把 FuncDef 返回的结果收集起来, 作为 AST 传给调用 parser 的函数
-// $1 指代规则里第一个符号的返回值, 也就是 FuncDef 的返回值
 CompUnit
-  : FuncDef {
+  : GlobalDefList {
     auto comp_unit = make_unique<CompUnitAST>();
-    comp_unit->func_def = unique_ptr<BaseAST>($1);
+    comp_unit->global_def_list = $1;
     ast = move(comp_unit);
   }
   ;
 
-// FuncDef ::= FuncType IDENT '(' ')' Block;
-// 我们这里可以直接写 '(' 和 ')', 因为之前在 lexer 里已经处理了单个字符的情况
-// 解析完成后, 把这些符号的结果收集起来, 然后拼成一个新的字符串, 作为结果返回
-// $$ 表示非终结符的返回值, 我们可以通过给这个符号赋值的方法来返回结果
-// 你可能会问, FuncType, IDENT 之类的结果已经是字符串指针了
-// 为什么还要用 unique_ptr 接住它们, 然后再解引用, 把它们拼成另一个字符串指针呢
-// 因为所有的字符串指针都是我们 new 出来的, new 出来的内存一定要 delete
-// 否则会发生内存泄漏, 而 unique_ptr 这种智能指针可以自动帮我们 delete
-// 虽然此处你看不出用 unique_ptr 和手动 delete 的区别, 但当我们定义了 AST 之后
-// 这种写法会省下很多内存管理的负担
-FuncDef
-  : FuncType IDENT '(' ')' Block {
-    auto ast = new FuncDefAST();
-    ast->func_type = unique_ptr<BaseAST>($1);
-    ast->ident = *unique_ptr<string>($2);
-    ast->block = unique_ptr<BaseAST>($5);
+GlobalDefList
+  : {
+    $$ = new std::vector<unique_ptr<BaseAST>>();
+  }
+  | GlobalDefList GlobalDef {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($2));
+    $$ = vec;
+  }
+  ;
+
+GlobalDef
+  : FuncDef {
+    auto ast = new GlobalDefAST();
+    ast->type = GlobalDefAST::FUNC_DEF;
+    ast->func_def = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | Decl {
+    auto ast = new GlobalDefAST();
+    ast->type = GlobalDefAST::DECL;
+    ast->decl = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
   ;
 
-// 同上, 不再解释
-FuncType
-  : INT {
-    auto ast = new FuncTypeAST();
-    ast->type = "int";
+FuncDef
+  : Type IDENT '(' ')' Block {
+    auto ast = new FuncDefAST();
+    ast->func_type = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    ast->block = unique_ptr<BaseAST>($5);
     $$ = ast;
   }
   ;
@@ -462,7 +464,7 @@ Decl
   ;
 
 ConstDecl
-  : CONST BType ConstDefList ';' {
+  : CONST Type ConstDefList ';' {
     auto ast = new ConstDeclAST();
     ast->btype = *$2;
     ast->const_def_list = $3;
@@ -471,7 +473,7 @@ ConstDecl
   ;
 
 VarDecl
-  : BType VarDefList ';' {
+  : Type VarDefList ';' {
     auto ast = new VarDeclAST();
     ast->btype = *$1;
     ast->var_def_list = $2;
@@ -505,9 +507,12 @@ VarDefList
   }
   ;
 
-BType
+Type
   : INT {
     $$ = new std::string("int");
+  }
+  | VOID {
+    $$ = new std::string("void");
   }
   ;
 
