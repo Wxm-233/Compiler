@@ -364,10 +364,13 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     first_bb->insts = combine_slices(vec_def_bb->insts, first_bb->insts);
 
     auto last_bb = (koopa_raw_basic_block_data_t*)raw_function->bbs.buffer[raw_function->bbs.len-1];
-    if (last_bb->insts.len == 0) {
-        last_bb->insts.len = 1;
-        last_bb->insts.buffer = new const void*[last_bb->insts.len];
-        last_bb->insts.kind = KOOPA_RSIK_VALUE;
+    if (last_bb->insts.len == 0 || ((koopa_raw_value_data_t*)(last_bb->insts.buffer[last_bb->insts.len-1]))->kind.tag != KOOPA_RVT_RETURN) {
+        last_bb->insts.len += 1;
+        auto buffer = new const void*[last_bb->insts.len];
+        for (int i = 0; i < last_bb->insts.len - 1; i++) {
+            buffer[i] = last_bb->insts.buffer[i];
+        }
+        last_bb->insts.buffer = buffer;
         auto raw_ret = new koopa_raw_value_data;
         auto ty = new koopa_raw_type_kind_t;
         ty->tag = KOOPA_RTT_UNIT;
@@ -381,7 +384,7 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             raw_ret->kind.data.ret.value = build_number(0);
         }
         else assert(false);
-        last_bb->insts.buffer[0] = raw_ret;
+        buffer[last_bb->insts.len-1] = raw_ret;
     }
 
     Symbol::leave_scope();
