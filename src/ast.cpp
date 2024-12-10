@@ -283,6 +283,7 @@ void *BlockAST::toRaw(int n = 0, void* args[] = nullptr) const
     auto raw_basic_block = new koopa_raw_basic_block_data_t;
     if (n == -1) {
         raw_basic_block->name = "%entry";
+        n = 0;
     }
     else {
         raw_basic_block->name = nullptr;
