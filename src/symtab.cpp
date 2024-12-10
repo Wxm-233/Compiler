@@ -11,14 +11,21 @@ namespace Symbol {
     {
         if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
             assert(false);
-        symtab_stack[scope_level][ident] = {type, int_value, nullptr};
+        symtab_stack[scope_level][ident] = {type, int_value, nullptr, nullptr};
     }
     
     void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator)
     {
         if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
             assert(false);
-        symtab_stack[scope_level][ident] = {type, 0, allocator};
+        symtab_stack[scope_level][ident] = {type, 0, allocator, nullptr};
+    }
+
+    void insert(const std::string &ident, Type type, koopa_raw_function_data_t* function)
+    {
+        if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
+            assert(false);
+        symtab_stack[scope_level][ident] = {type, 0, nullptr, function};
     }
 
     symbol_val query(const std::string &ident)
@@ -28,7 +35,7 @@ namespace Symbol {
             if (symtab_stack[i].find(ident) != symtab_stack[i].end())
                 return symtab_stack[i][ident];
         }
-        return {TYPE_VAR, 0, nullptr};
+        return {TYPE_VAR, 0, nullptr, nullptr};
     }
 
     void enter_scope()

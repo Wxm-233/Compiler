@@ -63,14 +63,16 @@ public:
     std::string func_type;
     std::string ident;
     std::unique_ptr<BaseAST> block;
+    std::vector<std::unique_ptr<BaseAST>>* func_f_param_list;
 
     void* toRaw(int n, void* args[]) const override;
 };
 
-class FuncTypeAST : public BaseAST
+class FuncFParamAST : public BaseAST
 {
 public:
     std::string type;
+    std::string ident;
 
     void* toRaw(int n, void* args[]) const override;
 };
@@ -202,12 +204,15 @@ class UnaryExpAST : public BaseAST
 public:
     enum Type {
         PRIMARY,
-        UNARY
+        UNARY,
+        FUNC_CALL
     } type;
 
     std::unique_ptr<BaseAST> primary_exp;
     char unaryop;
-    std::unique_ptr<BaseAST> unary_exp; 
+    std::unique_ptr<BaseAST> unary_exp;
+    std::string ident;
+    std::vector<std::unique_ptr<BaseAST>>* func_r_param_list;
 
     void* toRaw(int n, void* args[]) const override;
 };

@@ -217,9 +217,12 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     auto raw_function = new koopa_raw_function_data_t;
     auto ty = new koopa_raw_type_kind_t;
     ty->tag = KOOPA_RTT_FUNCTION;
-    ty->data.function.params.buffer = nullptr;
-    ty->data.function.params.len = 0;
+    ty->data.function.params.len = func_f_param_list->size();
+    ty->data.function.params.buffer = new const void*[func_f_param_list->size()];
     ty->data.function.params.kind = KOOPA_RSIK_TYPE;
+    for (int i = 0; i < func_f_param_list->size(); i++) {
+        ty->data.function.params.buffer[i] = func_f_param_list->at(i)->toRaw(i);
+    }
     {
         auto ret_ty = new koopa_raw_type_kind_t;
         if (func_type == "void") {
@@ -241,6 +244,8 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     raw_function->params.len = 0;
     raw_function->params.buffer = nullptr;
     raw_function->params.kind = KOOPA_RSIK_VALUE;
+
+    Symbol::insert(ident, Symbol::TYPE_FUNCTION, raw_function);
 
     Symbol::enter_scope();
 
@@ -276,6 +281,19 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     Symbol::leave_scope();
 
     return raw_function;
+}
+
+void *FuncFParamAST::toRaw(int n = 0, void* args[] = nullptr) const
+{
+    auto raw = new koopa_raw_value_data_t;
+    raw->name = build_ident(ident, '@');
+    auto ty = new koopa_raw_type_kind_t;
+    ty->tag = KOOPA_RTT_UNIT;
+    raw->ty = ty;
+    raw->kind.tag = KOOPA_RVT_FUNC_ARG_REF;
+    raw->kind.data.func_arg_ref.index = n;
+    set_used_by(raw, nullptr);
+    return raw;
 }
 
 void *BlockAST::toRaw(int n = 0, void* args[] = nullptr) const
@@ -693,60 +711,94 @@ void *PrimaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 
 void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    if (type == PRIMARY) {
+    switch (type)
+    {
+    case PRIMARY:
         return primary_exp->toRaw();
-    }
-    if (unaryop == '+') {
-        return unary_exp->toRaw();
-    }
+    case UNARY:
+        if (unaryop == '+') {
+            return unary_exp->toRaw();
+        }
+    {
+        auto insts = (std::vector<koopa_raw_value_data*>*)unary_exp->toRaw();
+        assert(insts->size() > 0);
+        auto value = *insts->rbegin();
+        
+        if (value->kind.tag == KOOPA_RVT_INTEGER) {
+            int val = value->kind.data.integer.value;
+            switch (unaryop) {
+            case '-':
+                val = -val;
+                break;
+            case '!':
+                val = !val;
+                break;
+            default:
+                assert(false);
+            }
+            insts->pop_back();
+            insts->push_back(build_number(val, nullptr));
+            return insts;
+        }
 
-    assert(type == UNARY);
+        auto raw = new koopa_raw_value_data_t;
+        auto ty = new koopa_raw_type_kind_t;
+        ty->tag = KOOPA_RTT_INT32;
+        raw->ty = ty;
+        raw->name = nullptr;
 
-    auto insts = (std::vector<koopa_raw_value_data*>*)unary_exp->toRaw();
-    assert(insts->size() > 0);
-    auto value = *insts->rbegin();
-    
-    if (value->kind.tag == KOOPA_RVT_INTEGER) {
-        int val = value->kind.data.integer.value;
+        raw->kind.tag = KOOPA_RVT_BINARY;
+        raw->kind.data.binary.rhs = value;
         switch (unaryop) {
         case '-':
-            val = -val;
+            raw->kind.data.binary.op = KOOPA_RBO_SUB;
             break;
         case '!':
-            val = !val;
+            raw->kind.data.binary.op = KOOPA_RBO_EQ;
             break;
         default:
             assert(false);
         }
-        insts->pop_back();
-        insts->push_back(build_number(val, nullptr));
+
+        auto zero = build_number(0, raw);
+        raw->kind.data.binary.lhs = zero;
+        set_used_by(value, raw);
+        insts->push_back(raw);
+        return insts;
+
+    }
+    case FUNC_CALL:
+    {
+        auto raw = new koopa_raw_value_data_t;
+        auto ty = new koopa_raw_type_kind_t;
+        ty->tag = KOOPA_RTT_INT32;
+        raw->ty = ty;
+        raw->name = nullptr;
+        raw->kind.tag = KOOPA_RVT_CALL;
+        raw->kind.data.call.callee = Symbol::query(ident).function;
+        raw->kind.data.call.args.kind = KOOPA_RSIK_VALUE;
+        set_used_by(raw, nullptr);
+        auto insts = new std::vector<koopa_raw_value_data_t*>();
+        auto params = new std::vector<koopa_raw_value_data_t*>();
+        for (auto &exp : *func_r_param_list) {
+            auto exp_insts = (std::vector<koopa_raw_value_data_t*>*)exp->toRaw();
+            params->push_back(exp_insts->back());
+            for (auto inst : *exp_insts) {
+                insts->push_back(inst);
+            }
+        }
+        raw->kind.data.call.args.len = insts->size();
+        raw->kind.data.call.args.buffer = new const void* [insts->size()];
+        for (int i = 0; i < insts->size(); i++) {
+            raw->kind.data.call.args.buffer[i] = insts->at(i);
+        }
+        insts->push_back(raw);
         return insts;
     }
-
-    auto raw = new koopa_raw_value_data_t;
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
-    raw->name = nullptr;
-
-    raw->kind.tag = KOOPA_RVT_BINARY;
-    raw->kind.data.binary.rhs = value;
-    switch (unaryop) {
-    case '-':
-        raw->kind.data.binary.op = KOOPA_RBO_SUB;
-        break;
-    case '!':
-        raw->kind.data.binary.op = KOOPA_RBO_EQ;
-        break;
     default:
         assert(false);
     }
 
-    auto zero = build_number(0, raw);
-    raw->kind.data.binary.lhs = zero;
-    set_used_by(value, raw);
-    insts->push_back(raw);
-    return insts;
 }
 
 void *MulExpAST::toRaw(int n = 0, void* args[] = nullptr) const

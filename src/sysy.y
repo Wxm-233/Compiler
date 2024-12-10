@@ -51,6 +51,7 @@ using namespace std;
 %type <ast_val> Exp UnaryExp PrimaryExp MulExp AddExp RelExp EqExp LAndExp LOrExp
 %type <ast_val> Decl ConstDecl VarDecl ConstDef VarDef GlobalDef
 %type <ast_val> LVal InitVal ConstInitVal ConstExp
+%type <ast_val> FuncFParam
 
 %type <int_val> Number
 
@@ -58,7 +59,7 @@ using namespace std;
 
 %type <str_val> Type
 
-%type <vec_val> ConstDefList VarDefList BlockItemList GlobalDefList
+%type <vec_val> ConstDefList VarDefList BlockItemList GlobalDefList FuncFParamList FuncRParamList
 
 %%
 
@@ -97,14 +98,38 @@ GlobalDef
   ;
 
 FuncDef
-  : Type IDENT '(' ')' Block {
+  : Type IDENT '(' FuncFParamList ')' Block {
     auto ast = new FuncDefAST();
     ast->func_type = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
-    ast->block = unique_ptr<BaseAST>($5);
+    ast->func_f_param_list = $4;
+    ast->block = unique_ptr<BaseAST>($6);
     $$ = ast;
   }
   ;
+
+FuncFParamList
+  : {
+    $$ = new std::vector<unique_ptr<BaseAST>>();
+  }
+  | FuncFParam {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | FuncFParamList ',' FuncFParam {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
+  }
+
+FuncFParam
+  : Type IDENT {
+    auto ast = new FuncFParamAST();
+    ast->type = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    $$ = ast;
+  }
 
 Block
   : '{' BlockItemList '}' {
@@ -343,6 +368,29 @@ UnaryExp
     ast->unaryop = $1;
     ast->unary_exp = unique_ptr<BaseAST>($2);
     $$ = ast;
+  }
+  | IDENT '(' FuncRParamList ')' {
+    auto ast = new UnaryExpAST();
+    ast->type = UnaryExpAST::FUNC_CALL;
+    ast->ident = *unique_ptr<string>($1);
+    ast->func_r_param_list = $3;
+    $$ = ast;
+  }
+  ;
+
+FuncRParamList
+  : {
+    $$ = new std::vector<unique_ptr<BaseAST>>();
+  }
+  | Exp {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | FuncRParamList ',' Exp {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
   }
   ;
 
