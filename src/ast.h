@@ -29,11 +29,11 @@ public:
     static char* build_ident(const std::string& ident, char c);
     static void set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user);
     static koopa_raw_basic_block_data_t* build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts, const char* block_name);
-    static koopa_raw_value_data_t* build_jump(koopa_raw_basic_block_t target, koopa_raw_value_data_t* user, const char* name);
+    static koopa_raw_value_data_t* build_jump(koopa_raw_basic_block_t target, koopa_raw_slice_t* args);
     static koopa_raw_slice_t combine_slices(koopa_raw_slice_t& s1, koopa_raw_slice_t& s2);
     static void filter_basic_block(koopa_raw_basic_block_data_t* bb);
-    static koopa_raw_value_data_t* build_branch(koopa_raw_value_data* cond, koopa_raw_basic_block_data_t* true_bb, koopa_raw_basic_block_data_t* false_bb);
-    static void append_jump(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa_raw_value_data_t* jmp);
+    static koopa_raw_value_data_t* build_branch(koopa_raw_value_data* cond, koopa_raw_basic_block_data_t* true_bb, koopa_raw_basic_block_data_t* false_bb, koopa_raw_slice_t* true_args, koopa_raw_slice_t* false_args);
+    static void append_value(std::vector<koopa_raw_basic_block_data_t*>* bbs, koopa_raw_value_data_t* value);
     static koopa_raw_value_data_t* build_alloc(const char* name);
     static koopa_raw_value_data_t* build_store(koopa_raw_value_data_t* value, koopa_raw_value_data_t* dest);
     static koopa_raw_function_data_t* build_function(const char* name, std::vector<std::string> params, std::string ret_ty);

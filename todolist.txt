@@ -1,0 +1,4 @@
+- 内存管理：将各种new出来的内存释放掉
+- 对于raw_slice，比如各个block的insts，改用malloc和realloc
+- 可以依赖于filter_basic_block函数和后期处理，中间过程中可以放一些乱七八糟的
+- （如：number，arg_ref，以及一些单独的指令也可以单开一个块放）

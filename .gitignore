@@ -7,7 +7,7 @@ test.o
 a.out
 out
 /src/koopa.h
-out.
+out2
 test.exe
 .vscode
 *.sh
