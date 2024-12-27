@@ -189,9 +189,9 @@ koopa_raw_value_data_t* BaseAST::build_branch(
 
 void BaseAST::append_value(koopa_raw_basic_block_data_t* bb, koopa_raw_value_data_t* value)
 {
-    bb.insts.buffer = realloc(bb.insts.buffer, (bb.insts.len + 1) * sizeof(void*));
-    bb.insts.buffer[bb.insts.len] = value;
-    bb.insts.len += 1;
+    bb->insts.buffer = new const void*[bb->insts.len + 1];
+    bb->insts.buffer[bb->insts.len] = value;
+    bb->insts.len += 1;
 }
 
 koopa_raw_value_data_t* BaseAST::build_alloc(const char* name)
@@ -855,7 +855,7 @@ void *SimpleStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
         case BREAK:
         {
             auto insts = new std::vector<koopa_raw_value_data*>();
-            koopa_raw_basic_block_data_t* target = Symbol::query_loop_end();
+            koopa_raw_basic_block_data_t* target = Symbol::get_loop_exit();
             assert(target != nullptr);
             auto raw_jmp = build_jump(target);
             insts->push_back(raw_jmp);
@@ -866,7 +866,7 @@ void *SimpleStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
         case CONTINUE:
         {
             auto insts = new std::vector<koopa_raw_value_data*>();
-            koopa_raw_basic_block_data_t* target = Symbol::query_loop_entry();
+            koopa_raw_basic_block_data_t* target = Symbol::get_loop_header();
             assert(target != nullptr);
             auto raw_jmp = build_jump(target);
             insts->push_back(raw_jmp);
