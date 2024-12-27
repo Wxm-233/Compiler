@@ -9,6 +9,25 @@
 
 //inst_reg_use regs[8];
 
+void lw_safe(std::string reg, int loc) {
+    if (loc < 2048) {
+        std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li a0, " << loc << std::endl;
+        std::cout << "  add a0, sp, a0" << std::endl;
+        std::cout << "  lw " << reg << ", 0(a0)" << std::endl;
+    }
+}
+
+void sw_safe(std::string reg, int loc) {
+    if (loc < 2048) {
+        std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li a0, " << loc << std::endl;
+        std::cout << "  add a0, sp, a0" << std::endl;
+        std::cout << "  sw " << reg << ", 0(a0)" << std::endl;
+    }
+}
 
 namespace Stack {
     int R;
@@ -20,6 +39,36 @@ namespace Stack {
     }
     void Insert(koopa_raw_value_t inst, int loc) {
         loc_map.insert({inst, loc});
+    }
+    void Load2reg(koopa_raw_value_t value, std::string reg) {
+        switch (value->kind.tag) {
+            case KOOPA_RVT_INTEGER:
+                std::cout << "  li " << reg << ", " << value->kind.data.integer.value << std::endl;
+                break;
+            case KOOPA_RVT_BLOCK_ARG_REF:
+                std::cout << "  mv " << reg << ", a" << value->kind.data.block_arg_ref.index << std::endl;
+                break;
+            case KOOPA_RVT_FUNC_ARG_REF:
+                if (value->kind.data.func_arg_ref.index < 8) {
+                    std::cout << "  mv " << reg << ", a" << value->kind.data.func_arg_ref.index << std::endl;
+                } else {
+                    lw_safe(reg, 4 * (value->kind.data.func_arg_ref.index - 8) + stack_frame_length);
+                }
+                break;
+            case KOOPA_RVT_GLOBAL_ALLOC:
+                std::cout << "  la " << reg << ", " << value->name + 1 << std::endl;
+                std::cout << "  lw " << reg << ", 0(" << reg << ")" << std::endl;
+                break;
+            default:
+                lw_safe(reg, Query(value));
+        }
+    }
+    void StoreFromreg(koopa_raw_value_t value, std::string reg, std::string reg2) {
+        if (value->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
+            std::cout << "  la " << reg2 << ", " << value->name + 1 << std::endl;
+            std::cout << "  sw " << reg << ", 0(" << reg2 << ")" << std::endl;
+        }
+        else sw_safe(reg, Query(value));
     }
 }
 
@@ -53,25 +102,6 @@ namespace Stack {
 //     return pos;
 // }
 
-void lw_safe(std::string reg, int loc) {
-    if (loc < 2048) {
-        std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
-    } else {
-        std::cout << "  li a0, " << loc << std::endl;
-        std::cout << "  add a0, sp, a0" << std::endl;
-        std::cout << "  lw " << reg << ", 0(a0)" << std::endl;
-    }
-}
-
-void sw_safe(std::string reg, int loc) {
-    if (loc < 2048) {
-        std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
-    } else {
-        std::cout << "  li a0, " << loc << std::endl;
-        std::cout << "  add a0, sp, a0" << std::endl;
-        std::cout << "  sw " << reg << ", 0(a0)" << std::endl;
-    }
-}
 
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
@@ -266,16 +296,7 @@ void Visit(const koopa_raw_value_t &value)
 void Visit(const koopa_raw_return_t &ret)
 {
     if (ret.value != nullptr) {
-        if (ret.value->kind.tag == KOOPA_RVT_INTEGER) {
-            std::cout << "  li a0, " << ret.value->kind.data.integer.value << std::endl; 
-        } else if (ret.value->kind.tag == KOOPA_RVT_FUNC_ARG_REF) {
-            std::cout << "  mv a0, a" << ret.value->kind.data.func_arg_ref.index << std::endl;
-        } else if (ret.value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF) {
-            std::cout << "  mv a0, a" << ret.value->kind.data.block_arg_ref.index << std::endl;
-        } else {
-            // std::cout << "  mv a0, " << "a" << use_inst(ret.value) << std::endl;
-            lw_safe("a0", Stack::Query(ret.value));
-        }
+        Stack::Load2reg(ret.value, "a0");
     }
     if (Stack::R != 0) {
         lw_safe("ra", Stack::stack_frame_length - 4);
@@ -302,20 +323,8 @@ void Visit(const koopa_raw_return_t &ret)
 // 访问二元运算指令
 void Visit(const koopa_raw_binary_t &binary)
 {
-    if (binary.lhs->kind.tag == KOOPA_RVT_INTEGER) {
-        std::cout << "  li t0, " << binary.lhs->kind.data.integer.value << std::endl;
-    } else if (binary.lhs->kind.tag == KOOPA_RVT_BLOCK_ARG_REF) {
-        std::cout << "  lw t0, 0(a" << binary.lhs->kind.data.block_arg_ref.index << ')' << std::endl;
-    } else {
-        lw_safe("t0", Stack::Query(binary.lhs));
-    }
-    if (binary.rhs->kind.tag == KOOPA_RVT_INTEGER) {
-        std::cout << "  li t1, " << binary.rhs->kind.data.integer.value << std::endl;
-    } else if (binary.rhs->kind.tag == KOOPA_RVT_BLOCK_ARG_REF) {
-        std::cout << "  lw t1, 0(a" << binary.rhs->kind.data.block_arg_ref.index << ')' << std::endl;
-    } else {
-        lw_safe("t1", Stack::Query(binary.rhs));
-    }
+    Stack::Load2reg(binary.lhs, "t0");
+    Stack::Load2reg(binary.rhs, "t1");
     // int left_pos = use_inst(binary.lhs);
     // int right_pos = use_inst(binary.rhs);
     // int pos = alloc_reg(value);
@@ -446,32 +455,14 @@ void Visit(const koopa_raw_binary_t &binary)
 // 访问 store 指令
 void Visit(const koopa_raw_store_t &store)
 {
-    if (store.value->kind.tag == KOOPA_RVT_INTEGER) {
-        std::cout << "  li t0, " << store.value->kind.data.integer.value << std::endl;
-    } else if (store.value->kind.tag == KOOPA_RVT_FUNC_ARG_REF) {
-        if (store.value->kind.data.func_arg_ref.index < 8) {
-            std::cout << "  mv t0, a" << store.value->kind.data.func_arg_ref.index << std::endl;
-        } else {
-            lw_safe("t0", 4 * (store.value->kind.data.func_arg_ref.index - 8) + Stack::stack_frame_length);
-        }
-    } else {
-        lw_safe("t0", Stack::Query(store.value));
-    }
-    if (store.dest->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
-        std::cout << "  la t1, " << store.dest->name + 1 << std::endl;
-        std::cout << "  sw t0, 0(t1)" << std::endl;
-    }
-    else sw_safe("t0", Stack::Query(store.dest));
+    Stack::Load2reg(store.value, "t0");
+    Stack::StoreFromreg(store.dest, "t0", "t1");
 }
 
 // 访问 load 指令
 void Visit(const koopa_raw_load_t &load)
 {
-    if (load.src->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
-        std::cout << "  la t0, " << load.src->name + 1 << std::endl;
-        std::cout << "  lw t0, 0(t0)" << std::endl;
-    }
-    else lw_safe("t0", Stack::Query(load.src));
+    Stack::Load2reg(load.src, "t0");
     sw_safe("t0", Stack::current_loc);
 }
 
@@ -506,9 +497,7 @@ void Visit(const koopa_raw_branch_t &branch)
             std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
         }
     } else {
-        if (branch.cond->kind.tag == KOOPA_RVT_BLOCK_ARG_REF) {
-            std::cout << "  lw t0, 0(a" << branch.cond->kind.data.block_arg_ref.index << ')' << std::endl;
-        } else lw_safe("t0", Stack::Query(branch.cond));
+        Stack::Load2reg(branch.cond, "t0");
         for (int i = 0; i < branch.true_args.len; i++) {
             assert(((koopa_raw_value_data_t*)branch.true_args.buffer[i])->kind.tag == KOOPA_RVT_INTEGER);
             std::cout << "  li a" << i << ", " << ((koopa_raw_value_data_t*)branch.true_args.buffer[i])->kind.data.integer.value << std::endl;
