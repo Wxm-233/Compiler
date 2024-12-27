@@ -1,14 +1,9 @@
 *.DS_Store
 /build
-hello.c
-test.cpp
-test.c
-test.o
-a.out
-out
 /src/koopa.h
-out2
-test.exe
 .vscode
 *.sh
 .devcontainer
+
+test*
+hello*

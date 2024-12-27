@@ -440,6 +440,13 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     raw_function->bbs.kind = KOOPA_RSIK_BASIC_BLOCK;
     for (int i = 0; i < vec_bbs->size(); i++) {
         filter_basic_block(vec_bbs->at(i));
+        char *bb_name = new char[strlen(vec_bbs->at(i)->name) + ident.length() + 2];
+        memset(bb_name, 0, strlen(vec_bbs->at(i)->name) + ident.length() + 2);
+        bb_name[0] = '%';
+        strcat(bb_name, ident.c_str());
+        strcat(bb_name, "_");
+        strcat(bb_name, vec_bbs->at(i)->name + 1);
+        vec_bbs->at(i)->name = bb_name;
         raw_function->bbs.buffer[i] = vec_bbs->at(i);
     }
 
