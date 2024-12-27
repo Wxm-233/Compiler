@@ -6,6 +6,7 @@
 namespace Symbol {
     int scope_level = -1;
     std::vector<std::map<std::string, symbol_val>> symtab_stack;
+    std::stack<std::pair<koopa_raw_basic_block_data_t*, koopa_raw_basic_block_data_t*>> loop_stack;
 
     void insert(const std::string &ident, Type type, int int_value)
     {
@@ -48,6 +49,23 @@ namespace Symbol {
     {
         symtab_stack.pop_back();
         scope_level--;
+    }
+
+    void enter_loop(koopa_raw_basic_block_data_t* loop_header, koopa_raw_basic_block_data_t* loop_exit)
+    {
+        loop_stack.push({loop_header, loop_exit});
+    }
+    void leave_loop()
+    {
+        loop_stack.pop();
+    }
+    koopa_raw_basic_block_data_t* get_loop_header()
+    {
+        return loop_stack.top().first;
+    }
+    koopa_raw_basic_block_data_t* get_loop_exit()
+    {
+        return loop_stack.top().second;
     }
 }
 

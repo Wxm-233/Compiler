@@ -26,6 +26,10 @@ namespace Symbol {
     symbol_val query(const std::string &ident);
     void enter_scope();
     void leave_scope();
+    void enter_loop(koopa_raw_basic_block_data_t* loop_header, koopa_raw_basic_block_data_t* loop_exit);
+    void leave_loop();
+    koopa_raw_basic_block_data_t* get_loop_header();
+    koopa_raw_basic_block_data_t* get_loop_exit();
 };
 
 // namespace ConstSymbol {
