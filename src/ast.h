@@ -33,10 +33,13 @@ public:
     static koopa_raw_slice_t combine_slices(koopa_raw_slice_t& s1, koopa_raw_slice_t& s2);
     static void filter_basic_block(koopa_raw_basic_block_data_t* bb);
     static koopa_raw_value_data_t* build_branch(koopa_raw_value_data* cond, koopa_raw_basic_block_data_t* true_bb, koopa_raw_basic_block_data_t* false_bb, koopa_raw_slice_t* true_args, koopa_raw_slice_t* false_args);
-    static void append_value(koopa_raw_basic_block_data_t* bb, koopa_raw_value_data_t* value);
+    // static void append_value(koopa_raw_basic_block_data_t* bb, koopa_raw_value_data_t* value);
     static koopa_raw_value_data_t* build_alloc(const char* name);
     static koopa_raw_value_data_t* build_store(koopa_raw_value_data_t* value, koopa_raw_value_data_t* dest);
     static koopa_raw_function_data_t* build_function(const char* name, std::vector<std::string> params, std::string ret_ty);
+    // static void check_init_val_depth(std::unique_ptr<BaseAST>& init_val);
+    static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<int>* result_vec);
+    static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<void*>* result_vec);
 };
 
 class CompUnitAST : public BaseAST
@@ -345,6 +348,7 @@ class ConstDefAST : public BaseAST
 public:
     std::string ident;
     std::unique_ptr<BaseAST> const_init_val;
+    std::vector<std::unique_ptr<BaseAST>>* dim_list;
 
     void* toRaw(int n, void* args[]) const override;
 };
@@ -355,6 +359,7 @@ public:
     bool has_init_val;
     std::string ident;
     std::unique_ptr<BaseAST> init_val;
+    std::vector<std::unique_ptr<BaseAST>>* dim_list;
 
     void* toRaw(int n, void* args[]) const override;
 };
@@ -362,15 +367,18 @@ public:
 class ConstInitValAST : public BaseAST
 {
 public:
+    bool is_list;
     std::unique_ptr<BaseAST> const_exp;
-
+    std::vector<std::unique_ptr<BaseAST>>* const_init_val_list;
     void* toRaw(int n, void* args[]) const override;
 };
 
 class InitValAST : public BaseAST
 {
 public:
+    bool is_list;
     std::unique_ptr<BaseAST> exp;
+    std::vector<std::unique_ptr<BaseAST>>* init_val_list;
     void* toRaw(int n, void* args[]) const override;
 };
 
@@ -378,6 +386,7 @@ class LValAST : public BaseAST
 {
 public:
     std::string ident;
+    std::vector<std::unique_ptr<BaseAST>>* index_list;
 
     void* toRaw(int n, void* args[]) const override;
 };

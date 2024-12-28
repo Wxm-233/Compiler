@@ -42,7 +42,7 @@ using namespace std;
 
 // lexer 返回的所有 token 种类的声明
 // 注意 IDENT 和 INT_CONST 会返回 token 的值, 分别对应 str_val 和 int_val
-%token INT RETURN LAND LOR CONST IF ELSE WHILE FOR BREAK CONTINUE VOID
+%token INT RETURN LAND LOR CONST IF ELSE WHILE BREAK CONTINUE VOID
 %token <str_val> IDENT RELOP EQOP
 %token <int_val> INT_CONST
 
@@ -59,7 +59,8 @@ using namespace std;
 
 %type <str_val> Type
 
-%type <vec_val> ConstDefList VarDefList BlockItemList GlobalDefList FuncFParamList FuncRParamList
+%type <vec_val> DimList IndexList ConstDefList VarDefList ConstInitValList InitValList
+%type <vec_val> GlobalDefList FuncFParamList FuncRParamList BlockItemList
 
 %%
 
@@ -282,6 +283,32 @@ ConstExp
     auto ast = new ConstExpAST();
     ast->exp = unique_ptr<BaseAST>($1);
     $$ = ast;
+  }
+  ;
+
+DimList
+  : '[' ConstExp ']' {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($2));
+    $$ = vec;
+  }
+  | DimList '[' ConstExp ']' {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
+  }
+  ;
+
+IndexList
+  : '[' Exp ']' {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($2));
+    $$ = vec;
+  }
+  | IndexList '[' Exp ']' {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
   }
   ;
 
@@ -555,6 +582,39 @@ VarDefList
   }
   ;
 
+ConstInitValList
+  : {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | ConstInitVal {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | ConstInitValList ',' ConstInitVal {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
+  }
+  ;
+
+InitValList
+  : {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    $$ = vec;
+  }
+  | InitVal {
+    auto vec = new std::vector<unique_ptr<BaseAST>>();
+    vec->push_back(unique_ptr<BaseAST>($1));
+    $$ = vec;
+  }
+  | InitValList ',' InitVal {
+    auto vec = $1;
+    vec->push_back(unique_ptr<BaseAST>($3));
+    $$ = vec;
+  }
+
 Type
   : INT {
     $$ = new std::string("int");
@@ -571,6 +631,13 @@ ConstDef
     ast->const_init_val = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
+  | IDENT DimList '=' ConstInitVal {
+    auto ast = new ConstDefAST();
+    ast->ident = *unique_ptr<std::string>($1);
+    ast->dim_list = $2;
+    ast->const_init_val = unique_ptr<BaseAST>($4);
+    $$ = ast;
+  }
   ;
 
 VarDef
@@ -580,6 +647,13 @@ VarDef
     ast->ident = *unique_ptr<std::string>($1);
     $$ = ast;
   }
+  | IDENT DimList {
+    auto ast = new VarDefAST();
+    ast->has_init_val = false;
+    ast->ident = *unique_ptr<std::string>($1);
+    ast->dim_list = $2;
+    $$ = ast;
+  }
   | IDENT '=' InitVal {
     auto ast = new VarDefAST();
     ast->has_init_val = true;
@@ -587,20 +661,42 @@ VarDef
     ast->init_val = unique_ptr<BaseAST>($3);
     $$ = ast;
   }
+  | IDENT DimList '=' InitVal {
+    auto ast = new VarDefAST();
+    ast->has_init_val = true;
+    ast->ident = *unique_ptr<std::string>($1);
+    ast->dim_list = $2;
+    ast->init_val = unique_ptr<BaseAST>($4);
+    $$ = ast;
+  }
   ;
 
 ConstInitVal
   : ConstExp {
     auto ast = new ConstInitValAST();
+    ast->is_list = false;
     ast->const_exp = unique_ptr<BaseAST>($1);
     $$ = ast;
   }
+  | '{' ConstInitValList '}' {
+    auto ast = new ConstInitValAST();
+    ast->is_list = true;
+    ast->const_init_val_list = $2;
+    $$ = ast;
+  } 
   ;
 
 InitVal
   : Exp {
     auto ast = new InitValAST();
+    ast->is_list = false;
     ast->exp = unique_ptr<BaseAST>($1);
+    $$ = ast;
+  }
+  | '{' InitValList '}' {
+    auto ast = new InitValAST();
+    ast->is_list = true;
+    ast->init_val_list = $2;
     $$ = ast;
   }
 
@@ -608,6 +704,12 @@ LVal
   : IDENT {
     auto ast = new LValAST();
     ast->ident = *unique_ptr<std::string>($1);
+    $$ = ast;
+  }
+  | IDENT IndexList {
+    auto ast = new LValAST();
+    ast->ident = *unique_ptr<std::string>($1);
+    ast->index_list = $2;
     $$ = ast;
   }
   ;
