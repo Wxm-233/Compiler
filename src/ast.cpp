@@ -701,6 +701,7 @@ void *OpenStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
             auto cond = (koopa_raw_value_data_t*)exp->toRaw();
             auto branch = build_branch(cond, body_bb, end_bb);
             current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch})));
+            current_bbs.push_back(body_bb);
             stmt->toRaw(n, args);
             auto jmp = build_jump(entry_bb);
             current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({jmp})));
@@ -751,6 +752,7 @@ void *ClosedStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
             auto cond = (koopa_raw_value_data_t*)exp->toRaw();
             auto branch = build_branch(cond, body_bb, end_bb);
             current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch})));
+            current_bbs.push_back(body_bb);
             closed_stmt->toRaw(n, args);
             auto jmp = build_jump(entry_bb);
             current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({jmp})));
