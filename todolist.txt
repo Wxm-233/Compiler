@@ -1,6 +1,4 @@
 - 内存管理：将各种new出来的内存释放掉
-- 多放blocks，比如if/while结构中把改名的部分去掉，改为加入一个具名空块
-- 这样符合toRaw()的理念：toRaw()返回的值就是这个ast所具有的，被别人所用的值，而一个stmt不应该具值
 - toRaw()函数只对于产生koopa_raw_value的ast有有效返回值(例：exp)；toRaw()函数在调用过程中将基本块生成于current_bbs中
 - 后续：可以将添加指令/基本块模块化，比如可以有一个函数添加一条指令到current_bbs中，也可以添加一个basic_block
 - 可以有一个缓存，添加指令就把指令放到一个insts结构中，若添加basic_block，则将insts清空转为一个basic_block
