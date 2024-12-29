@@ -1614,7 +1614,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             dim_vec->push_back((long)(*i)->toRaw());
         }
     auto result_vec = new std::vector<int>();
-    const_init_val->toRaw(0, new void*[2]{dim_vec, result_vec});
+    const_init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
     if (dim_list == nullptr) {
         int val = result_vec->front();
         Symbol::insert(ident, Symbol::TYPE_CONST, val);
@@ -1717,7 +1717,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
     auto result_vec = new std::vector<void*>();
     if (has_init_val)
-        init_val->toRaw(0, new void*[2]{dim_vec, result_vec});
+        init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
     if (dim_list != nullptr) {
         if (!has_init_val) {
             int len = 1;
@@ -1881,8 +1881,6 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
 
 void *ConstInitValAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    // n = 0 if toRaw() is called by ConstDefAST::toRaw()
-    // else n = 1
     auto dim_vec = (std::vector<int>*)args[0];
     auto result_vec = (std::vector<int>*)args[1];
     if (!is_list) {
@@ -1896,12 +1894,10 @@ void *ConstInitValAST::toRaw(int n = 0, void* args[] = nullptr) const
                 break;
             alignment *= i;
         }
+        auto new_dim_vec = new std::vector<int>(*dim_vec);
+        new_dim_vec->pop_back();
         for (auto& i : *const_init_val_list) {
-            i->toRaw(1, new void*[2]{dim_vec, result_vec});
-        }
-        if (result_vec->size() == 0) {
-            if (n == 1)
-                alignment = dim_vec->front();
+            i->toRaw(n, new void*[2]{new_dim_vec, result_vec});
         }
         for (; (result_vec->size() % alignment) || (result_vec->size() == 0) ; result_vec->push_back(0));
     }
@@ -1924,12 +1920,10 @@ void *InitValAST::toRaw(int n = 0, void* args[] = nullptr) const
                 break;
             alignment *= i;
         }
+        auto new_dim_vec = new std::vector<int>(*dim_vec);
+        new_dim_vec->pop_back();
         for (auto& i : *init_val_list) {
-            i->toRaw(1, new void*[2]{dim_vec, result_vec});
-        }
-        if (result_vec->size() == 0) {
-            if (n == 1)
-                alignment = dim_vec->front();
+            i->toRaw(n, new void*[2]{new_dim_vec, result_vec});
         }
         for (; result_vec->size() % alignment || (!result_vec->size()); result_vec->push_back(build_number(0)));}
     return result_vec;
