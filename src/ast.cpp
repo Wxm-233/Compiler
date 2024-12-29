@@ -2,6 +2,7 @@
 #include "symtab.h"
 
 std::vector<koopa_raw_basic_block_data_t*> current_bbs;
+std::vector<koopa_raw_value_data_t*> global_values;
 
 koopa_raw_value_data_t* BaseAST::build_number(int number, koopa_raw_value_data_t* user=nullptr)
 {
@@ -36,17 +37,6 @@ char* BaseAST::build_ident(const std::string& ident, char c)
     name[ident.size() + 1] = '\0';
     return name;
 }
-
-// 其实不需要写used_by，这个函数的作用实际上是填充used_by字段中的kind，否则会出现类型错误
-// 后期可以考虑删除该函数，每个value初始化的时候就填写好used_by字段
-// void BaseAST::set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user=nullptr)
-// {
-//     value->used_by = {
-//         .buffer = nullptr,
-//         .len = 0,
-//         .kind = KOOPA_RSIK_VALUE,
-//     };
-// }
 
 koopa_raw_basic_block_data_t* BaseAST::build_block_from_insts(std::vector<koopa_raw_value_data_t*>* insts=nullptr, const char* block_name=nullptr)
 {
@@ -322,23 +312,6 @@ koopa_raw_function_data_t* BaseAST::build_function(
     return raw_function;
 }
 
-// static void check_init_val_depth(std::unique_ptr<BaseAST>& init_val)
-// {
-//     if (init_val == nullptr) return;
-//     auto const_init_val_ast = dynamic_cast<ConstInitValAST*>(init_val.get());
-//     if (const_init_val_ast != nullptr) {
-//         if (const_init_val_ast->is_list) {
-//             for (auto& i : *const_init_val_ast->const_init_val_list) {
-//                 check_init_val_depth(i);
-
-//             }
-//         }
-//         else {
-//             const_init_val_ast->depth = 0;
-//         }
-//     }
-// }
-
 koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std::vector<int>* result_vec)
 {
     int dim = dim_vec->back();
@@ -437,9 +410,7 @@ koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std:
 {
     auto int_vec = new std::vector<int>();
     for (auto i : *result_vec) {
-        auto bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)i;
-        auto last_bb = bbs_vec->back();
-        auto inst = (koopa_raw_value_data_t*)last_bb->insts.buffer[last_bb->insts.len - 1];
+        auto inst = (koopa_raw_value_data_t*)i;
         assert(inst->kind.tag == KOOPA_RVT_INTEGER);
         int_vec->push_back(inst->kind.data.integer.value);
     }
@@ -451,7 +422,6 @@ void *CompUnitAST::toRaw(int n = 0, void* args[] = nullptr) const
     auto raw_program = new koopa_raw_program_t;
 
     std::vector<koopa_raw_function_data_t*> funcs;
-    std::vector<koopa_raw_value_data_t*> values;
 
     Symbol::enter_scope();
 
@@ -465,32 +435,16 @@ void *CompUnitAST::toRaw(int n = 0, void* args[] = nullptr) const
     funcs.push_back(build_function("stoptime", {}, "void"));
 
     for (auto& global_def : *global_def_list) {
-        auto def = dynamic_cast<GlobalDefAST*>(global_def.get());
-        switch (def->type) {
-        case GlobalDefAST::FUNC_DEF:
-        {
-            auto func_def = (koopa_raw_function_data_t*)global_def->toRaw();
+        auto func_def = (koopa_raw_function_data_t*)global_def->toRaw();
+        if (func_def != nullptr)
             funcs.push_back(func_def);
-            break;
-        }
-        case GlobalDefAST::DECL:
-        {
-            auto value_list = (std::vector<koopa_raw_value_data*>*)global_def->toRaw();
-            for (auto value : *value_list) {
-                values.push_back(value);
-            }
-            break;
-        }
-        default:
-            assert(false);
-        }
     }
 
-    raw_program->values.len = values.size();
+    raw_program->values.len = global_values.size();
     raw_program->values.buffer = new const void*[raw_program->values.len];
     raw_program->values.kind = KOOPA_RSIK_VALUE;
-    for (int i = 0; i < values.size(); i++) {
-        raw_program->values.buffer[i] = values[i];
+    for (int i = 0; i < global_values.size(); i++) {
+        raw_program->values.buffer[i] = global_values[i];
     }
 
     raw_program->funcs.len = funcs.size();
@@ -513,7 +467,8 @@ void *GlobalDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             return func_def->toRaw();
         case DECL:
             // global decl
-            return decl->toRaw(1);
+            decl->toRaw(1);
+            return nullptr;
         default:
             assert(false);
     }
@@ -559,20 +514,33 @@ void *FuncDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     }
     raw_function->ty = ty;
     raw_function->name = build_ident(ident, '@');
-    auto vec_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)block->toRaw(-1);
-    raw_function->bbs.len = vec_bbs->size();
+    current_bbs.clear();
+    block->toRaw(-1);
+    auto filtered_bbs = std::vector<koopa_raw_basic_block_data_t*>();
+    for (auto block_bb : current_bbs) {
+        if (block_bb->insts.len == 0 && block_bb->name == nullptr) {
+            // delete block_bb;
+            continue;
+        }
+        else if (block_bb->name == nullptr) {
+            auto last = filtered_bbs.back();
+            last->insts = combine_slices(last->insts, block_bb->insts);
+        }
+        else filtered_bbs.push_back(block_bb);
+    }
+    raw_function->bbs.len = filtered_bbs.size();
     raw_function->bbs.buffer = new const void*[raw_function->bbs.len];
     raw_function->bbs.kind = KOOPA_RSIK_BASIC_BLOCK;
-    for (int i = 0; i < vec_bbs->size(); i++) {
-        filter_basic_block(vec_bbs->at(i));
-        char *bb_name = new char[strlen(vec_bbs->at(i)->name) + ident.length() + 2];
-        memset(bb_name, 0, strlen(vec_bbs->at(i)->name) + ident.length() + 2);
+    for (int i = 0; i < filtered_bbs.size(); i++) {
+        filter_basic_block(filtered_bbs[i]);
+        char *bb_name = new char[strlen(filtered_bbs[i]->name) + ident.length() + 2];
+        memset(bb_name, 0, strlen(filtered_bbs[i]->name) + ident.length() + 2);
         bb_name[0] = '%';
         strcat(bb_name, ident.c_str());
         strcat(bb_name, "_");
-        strcat(bb_name, vec_bbs->at(i)->name + 1);
-        vec_bbs->at(i)->name = bb_name;
-        raw_function->bbs.buffer[i] = vec_bbs->at(i);
+        strcat(bb_name, filtered_bbs[i]->name + 1);
+        filtered_bbs[i]->name = bb_name;
+        raw_function->bbs.buffer[i] = filtered_bbs[i];
     }
 
     auto first_bb = (koopa_raw_basic_block_data_t*)raw_function->bbs.buffer[0];
@@ -653,23 +621,11 @@ void *BlockAST::toRaw(int n = 0, void* args[] = nullptr) const
         .kind = KOOPA_RSIK_VALUE,
     };
 
-    auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-    bbs_vec->push_back(raw_basic_block);
+    current_bbs.push_back(raw_basic_block);
     for (auto& block_item : *block_item_list) {
-        auto block_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)block_item->toRaw(n, args);
-        for (auto block_bb : *block_bbs_vec) {
-            if (block_bb->insts.len == 0 && block_bb->name == nullptr) {
-                // delete block_bb;
-                continue;
-            }
-            else if (block_bb->name == nullptr) {
-                auto last = bbs_vec->back();
-                last->insts = combine_slices(last->insts, block_bb->insts);
-            }
-            else bbs_vec->push_back(block_bb);
-        }
+        block_item->toRaw(n, args);
     }
-    return bbs_vec;
+    return raw_basic_block;
 }
 
 void *BlockItemAST::toRaw(int n = 0, void* args[] = nullptr) const
@@ -698,104 +654,75 @@ void *StmtAST::toRaw(int n = 0, void* args[] = nullptr) const
 }
 
 void *OpenStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
-
-// args[0] : while_entry_bb
-// args[1] : while_end_bb
 {
     switch (type) {
         case IF:
         {
-            koopa_raw_basic_block_data_t* end_bb = build_block_from_insts(nullptr, "%end");
-            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)stmt->toRaw(n, args);
-            true_bbs->front()->name = "%then";
-            auto raw_jmp = build_jump(end_bb);
-            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-
-            auto raw_branch = build_branch(value, true_bbs->front(), end_bb);
-            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_branch}));
-
-            exp_bbs_vec->push_back(branch_bb);
-            for (auto bb : *true_bbs) {
-                exp_bbs_vec->push_back(bb);
-            }
-            exp_bbs_vec->push_back(jmp_bb);
-            exp_bbs_vec->push_back(end_bb);
-            
-            return exp_bbs_vec;
+            auto entry_bb = build_block_from_insts(nullptr);
+            current_bbs.push_back(entry_bb);
+            auto cond = (koopa_raw_value_data_t*)exp->toRaw();
+            auto branch = build_branch(cond, nullptr, nullptr);
+            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch}));
+            current_bbs.push_back(branch_bb);
+            auto true_entry_bb = (koopa_raw_basic_block_data_t*)stmt->toRaw(n, args);
+            true_entry_bb->name = "%if_body";
+            branch->kind.data.branch.true_bb = true_entry_bb;
+            auto true_jmp = build_jump(nullptr);
+            auto true_jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({true_jmp}));
+            current_bbs.push_back(true_jmp_bb);
+            auto end_bb = build_block_from_insts(nullptr, "%if_end");
+            current_bbs.push_back(end_bb);
+            branch->kind.data.branch.false_bb = end_bb;
+            true_jmp->kind.data.jump.target = end_bb;
+            return entry_bb;
         }
         case IF_ELSE:
         {
-            koopa_raw_basic_block_data_t* end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
-            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw(n, args);
-            true_bbs->front()->name = "%then";
-            auto false_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)open_stmt->toRaw(n, args);
-            false_bbs->front()->name = "%else";
-            auto raw_jmp = build_jump(end_bb);
-            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-            
-            auto raw_branch = build_branch(value, true_bbs->front(), false_bbs->front());
-            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_branch}));
-
-            exp_bbs_vec->push_back(branch_bb);
-            for (auto bb : *true_bbs) {
-                exp_bbs_vec->push_back(bb);
-            }
-            exp_bbs_vec->push_back(jmp_bb);
-            for (auto bb : *false_bbs) {
-                exp_bbs_vec->push_back(bb);
-            }
-            exp_bbs_vec->push_back(jmp_bb);
-            exp_bbs_vec->push_back(end_bb);
-
-            return exp_bbs_vec;
+            auto entry_bb = build_block_from_insts(nullptr);
+            current_bbs.push_back(entry_bb);
+            auto cond = (koopa_raw_value_data_t*)exp->toRaw();
+            auto branch = build_branch(cond, nullptr, nullptr);
+            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch}));
+            current_bbs.push_back(branch_bb);
+            auto true_entry_bb = (koopa_raw_basic_block_data_t*)closed_stmt->toRaw(n, args);
+            true_entry_bb->name = "%if_true";
+            branch->kind.data.branch.true_bb = true_entry_bb;
+            auto true_jmp = build_jump(nullptr);
+            auto true_jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({true_jmp}));
+            current_bbs.push_back(true_jmp_bb);
+            auto false_entry_bb = (koopa_raw_basic_block_data_t*)open_stmt->toRaw(n, args);
+            false_entry_bb->name = "%if_false";
+            branch->kind.data.branch.false_bb = false_entry_bb;
+            auto false_jmp = build_jump(nullptr);
+            auto false_jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({false_jmp}));
+            current_bbs.push_back(false_jmp_bb);
+            auto end_bb = build_block_from_insts(nullptr, "%if_end");
+            current_bbs.push_back(end_bb);
+            true_jmp->kind.data.jump.target = end_bb;
+            false_jmp->kind.data.jump.target = end_bb;
+            return entry_bb;
         }
         case WHILE:
         {
-            koopa_raw_basic_block_data_t* end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%while_end");
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto entry_bb = exp_bbs_vec->front();
-            if (entry_bb->name == nullptr)
-                entry_bb->name = "%while_entry";
-            Symbol::enter_loop(entry_bb, end_bb);
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-            
-            auto raw_branch = build_branch(value, nullptr, end_bb);
-            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_branch}));
-
-            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)open_stmt->toRaw(n, args);
-            true_bbs->front()->name = "%while_body";
-            auto raw_jmp = build_jump(entry_bb);
-            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
-            raw_branch->kind.data.branch.true_bb = true_bbs->front();
-
+            auto entry_bb = build_block_from_insts(nullptr, "%while_entry");
             auto init_jmp = build_jump(entry_bb);
-            auto init_insts = new std::vector<koopa_raw_value_data_t*>({init_jmp});
-            auto init_bb = build_block_from_insts(init_insts);
-
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>({init_bb});
-            for (auto bb : *exp_bbs_vec) {
-                bbs_vec->push_back(bb);
-            }
-            bbs_vec->push_back(branch_bb);
-            for (auto bb : *true_bbs) {
-                bbs_vec->push_back(bb);
-            }
-            bbs_vec->push_back(jmp_bb);
-            bbs_vec->push_back(end_bb);
-
+            current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({init_jmp})));
+            auto end_bb = build_block_from_insts(nullptr, "%while_end");
+            Symbol::enter_loop(entry_bb, end_bb);
+            current_bbs.push_back(entry_bb);
+            auto cond = (koopa_raw_value_data_t*)exp->toRaw();
+            auto branch = build_branch(cond, nullptr, end_bb);
+            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch}));
+            current_bbs.push_back(branch_bb);
+            auto stmt_bb = (koopa_raw_basic_block_data_t*)stmt->toRaw(n, args);
+            stmt_bb->name = "while_body";
+            branch->kind.data.branch.true_bb = stmt_bb;
+            auto jmp = build_jump(entry_bb);
+            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({jmp}));
+            current_bbs.push_back(jmp_bb);
+            current_bbs.push_back(end_bb);
             Symbol::leave_loop();
-
-            return bbs_vec;
+            return entry_bb;
         }
         default:
             assert(false);
@@ -811,72 +738,51 @@ void *ClosedStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
         case IF_ELSE:
         {
-            koopa_raw_basic_block_data_t* end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%end");
-            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw(n, args);
-            true_bbs->front()->name = "%then";
-            auto false_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt2->toRaw(n, args);
-            false_bbs->front()->name = "%else";
-            auto raw_jmp = build_jump(end_bb);
-            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-            auto raw_branch = build_branch(value, true_bbs->front(), false_bbs->front());
-            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_branch}));
-
-            exp_bbs_vec->push_back(branch_bb);
-            for (auto bb : *true_bbs) {
-                exp_bbs_vec->push_back(bb);
-            }
-            exp_bbs_vec->push_back(jmp_bb);
-            for (auto bb : *false_bbs) {
-                exp_bbs_vec->push_back(bb);
-            }
-            exp_bbs_vec->push_back(jmp_bb);
-            exp_bbs_vec->push_back(end_bb);
-
-            return exp_bbs_vec;
+            auto entry_bb = build_block_from_insts(nullptr);
+            current_bbs.push_back(entry_bb);
+            auto cond = (koopa_raw_value_data_t*)exp->toRaw();
+            auto branch = build_branch(cond, nullptr, nullptr);
+            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch}));
+            current_bbs.push_back(branch_bb);
+            auto true_entry_bb = (koopa_raw_basic_block_data_t*)closed_stmt->toRaw(n, args);
+            true_entry_bb->name = "%if_true";
+            branch->kind.data.branch.true_bb = true_entry_bb;
+            auto true_jmp = build_jump(nullptr);
+            auto true_jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({true_jmp}));
+            current_bbs.push_back(true_jmp_bb);
+            auto false_entry_bb = (koopa_raw_basic_block_data_t*)closed_stmt2->toRaw(n, args);
+            false_entry_bb->name = "%if_false";
+            branch->kind.data.branch.false_bb = false_entry_bb;
+            auto false_jmp = build_jump(nullptr);
+            auto false_jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({false_jmp}));
+            current_bbs.push_back(false_jmp_bb);
+            auto end_bb = build_block_from_insts(nullptr, "%if_end");
+            current_bbs.push_back(end_bb);
+            true_jmp->kind.data.jump.target = end_bb;
+            false_jmp->kind.data.jump.target = end_bb;
+            return entry_bb;
         }
         case WHILE:
         {
-            koopa_raw_basic_block_data_t* end_bb = build_block_from_insts(new std::vector<koopa_raw_value_data*>(), "%while_end");
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto entry_bb = exp_bbs_vec->front();
-            if (entry_bb->name == nullptr)
-                entry_bb->name = "%while_entry";
-            Symbol::enter_loop(entry_bb, end_bb);
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-            
-            auto raw_branch = build_branch(value, nullptr, end_bb);
-            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_branch}));
-
-            auto true_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)closed_stmt->toRaw(n, args);
-            true_bbs->front()->name = "%while_body";
-            auto raw_jmp = build_jump(entry_bb);
-            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
-            raw_branch->kind.data.branch.true_bb = true_bbs->front();
-
+            auto entry_bb = build_block_from_insts(nullptr, "%while_entry");
             auto init_jmp = build_jump(entry_bb);
-            auto init_insts = new std::vector<koopa_raw_value_data_t*>({init_jmp});
-            auto init_bb = build_block_from_insts(init_insts);
-
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>({init_bb});
-            for (auto bb : *exp_bbs_vec) {
-                bbs_vec->push_back(bb);
-            }
-            bbs_vec->push_back(branch_bb);
-            for (auto bb : *true_bbs) {
-                bbs_vec->push_back(bb);
-            }
-            bbs_vec->push_back(jmp_bb);
-            bbs_vec->push_back(end_bb);
-
+            current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({init_jmp})));
+            auto end_bb = build_block_from_insts(nullptr, "%while_end");
+            Symbol::enter_loop(entry_bb, end_bb);
+            current_bbs.push_back(entry_bb);
+            auto cond = (koopa_raw_value_data_t*)exp->toRaw();
+            auto branch = build_branch(cond, nullptr, end_bb);
+            auto branch_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch}));
+            current_bbs.push_back(branch_bb);
+            auto stmt_bb = (koopa_raw_basic_block_data_t*)closed_stmt->toRaw(n, args);
+            stmt_bb->name = "while_body";
+            branch->kind.data.branch.true_bb = stmt_bb;
+            auto jmp = build_jump(entry_bb);
+            auto jmp_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({jmp}));
+            current_bbs.push_back(jmp_bb);
+            current_bbs.push_back(end_bb);
             Symbol::leave_loop();
-
-            return bbs_vec;
+            return entry_bb;
         }
         default:
             assert(false);
@@ -889,134 +795,96 @@ void *SimpleStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
     {
         case LVAL_ASSIGN:
         {
-            auto bbs_vec_exp = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            assert(bbs_vec_exp->size() > 0);
-            auto exp_last_bb = bbs_vec_exp->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-
-            auto lval_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)lval->toRaw();
-            auto lval_last_bb = lval_bbs_vec->back();
-            auto dest = (koopa_raw_value_data*)lval_last_bb->insts.buffer[lval_last_bb->insts.len-1];
-
+            auto value = (koopa_raw_value_data_t*)exp->toRaw();
+            auto dest = (koopa_raw_value_data_t*)lval->toRaw();
             auto raw_store = build_store(value, dest);
-
-            switch (dest->kind.tag) {
-                //case KOOPA_RVT_INTEGER:
-                case KOOPA_RVT_ALLOC:
-                    lval_last_bb->insts.buffer[lval_last_bb->insts.len-1] = raw_store;
-                    break;
-                case KOOPA_RVT_GET_ELEM_PTR:
-                {
-                    lval_last_bb->insts.len += 1;
-                    auto buffer = new const void*[lval_last_bb->insts.len];
-                    for (int i = 0; i < lval_last_bb->insts.len - 1; i++) {
-                        buffer[i] = lval_last_bb->insts.buffer[i];
-                    }
-                    buffer[lval_last_bb->insts.len-1] = raw_store;
-                    lval_last_bb->insts.buffer = buffer;
-                    break;
-                }
-                default:
-                    assert(false);
-            }
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            for (auto bb : *bbs_vec_exp) {
-                bbs_vec->push_back(bb);
-            }
-            for (auto bb : *lval_bbs_vec) {
-                bbs_vec->push_back(bb);
-            }
-            return bbs_vec;
+            auto bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_store}));
+            current_bbs.push_back(bb);
+            return bb;
         }
         case RETURN:
-        {   
-            auto raw_stmt = new koopa_raw_value_data_t;
-            auto ty = new koopa_raw_type_kind_t;
-            ty->tag = KOOPA_RTT_INT32;
-            raw_stmt->ty = ty;
-            raw_stmt->name = nullptr;
-            raw_stmt->used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            };
-            raw_stmt->kind.tag = KOOPA_RVT_RETURN;
-
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            assert(exp_bbs_vec->size() > 0);
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto value = (koopa_raw_value_data*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
-            raw_stmt->kind.data.ret.value = value;
-            
-            exp_last_bb->insts.len += 1;
-            auto buffer = new const void*[exp_last_bb->insts.len];
-            for (int i = 0; i < exp_last_bb->insts.len - 1; i++) {
-                buffer[i] = exp_last_bb->insts.buffer[i];
-            }
-            buffer[exp_last_bb->insts.len-1] = raw_stmt;
-            exp_last_bb->insts.buffer = buffer;
-
-            return exp_bbs_vec;
+        {
+            auto raw_return = new koopa_raw_value_data_t({
+                .ty = new koopa_raw_type_kind_t({
+                    .tag = KOOPA_RTT_INT32
+                }),
+                .name = nullptr,
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_RETURN,
+                    .data = {
+                        .ret = {
+                            .value = (koopa_raw_value_data_t*)exp->toRaw(),
+                        },
+                    },
+                },
+            });
+            auto bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_return}));
+            current_bbs.push_back(bb);
+            return bb;
         }
         case EMPTY_RETURN:
         {
-            auto raw_stmt = new koopa_raw_value_data_t;
-            auto ty = new koopa_raw_type_kind_t;
-            ty->tag = KOOPA_RTT_INT32;
-            raw_stmt->ty = ty;
-            raw_stmt->name = nullptr;
-            raw_stmt->used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            };
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            raw_stmt->kind.tag = KOOPA_RVT_RETURN;
-            raw_stmt->kind.data.ret.value = nullptr;
-            insts->push_back(raw_stmt);
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            auto raw_return = new koopa_raw_value_data_t({
+                .ty = new koopa_raw_type_kind_t({
+                    .tag = KOOPA_RTT_UNIT
+                }),
+                .name = nullptr,
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_RETURN,
+                    .data = {
+                        .ret = {
+                            .value = nullptr,
+                        },
+                    },
+                },
+            });
+            auto bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_return}));
+            current_bbs.push_back(bb);
+            return bb;
         }
         case EXP:
         {
-            return exp->toRaw();
+            exp->toRaw();
+            return build_block_from_insts(nullptr);
         }
         case EMPTY:
         {
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            return build_block_from_insts(nullptr);
         }
         case BLOCK:
         {
             Symbol::enter_scope();
-            auto bbs_vec = block->toRaw(n, args);
+            auto bb = block->toRaw(n, args);
             Symbol::leave_scope();
-            return bbs_vec;
+            return bb;
         }
         case BREAK:
         {
-            auto insts = new std::vector<koopa_raw_value_data*>();
             koopa_raw_basic_block_data_t* target = Symbol::get_loop_exit();
             assert(target != nullptr);
             auto raw_jmp = build_jump(target);
-            insts->push_back(raw_jmp);
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            auto bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
+            current_bbs.push_back(bb);
+            return bb;
         }
         case CONTINUE:
         {
-            auto insts = new std::vector<koopa_raw_value_data*>();
             koopa_raw_basic_block_data_t* target = Symbol::get_loop_header();
             assert(target != nullptr);
             auto raw_jmp = build_jump(target);
-            insts->push_back(raw_jmp);
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            auto bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_jmp}));
+            current_bbs.push_back(bb);
+            return bb;
         }
         default:
             assert(false);
@@ -1025,12 +893,8 @@ void *SimpleStmtAST::toRaw(int n = 0, void* args[] = nullptr) const
 
 void *ConstExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-    auto exp_last_bb = exp_bbs_vec->back();
-    auto value = (koopa_raw_value_data_t*)exp_last_bb->insts.buffer[exp_last_bb->insts.len - 1];
-
+    auto value = (koopa_raw_value_data_t*)exp->toRaw();
     assert(value->kind.tag == KOOPA_RVT_INTEGER);
-
     int val = value->kind.data.integer.value;
     return (void*)val;
 }
@@ -1048,51 +912,35 @@ void *PrimaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         return exp->toRaw();
     case LVAL:
     {
-        auto lval_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)lval->toRaw();
-        auto lval_last_bb = lval_bbs_vec->back();
-        auto value = (koopa_raw_value_data_t*)lval_last_bb->insts.buffer[lval_last_bb->insts.len-1];
+        auto value = (koopa_raw_value_data_t*)lval->toRaw();
         switch (value->kind.tag) {
             case KOOPA_RVT_INTEGER:
-                return lval_bbs_vec;
+                return value;
             case KOOPA_RVT_ALLOC:
-            {
-                auto raw_load = new koopa_raw_value_data_t;
-                raw_load->ty = new koopa_raw_type_kind_t({
-                    .tag = KOOPA_RTT_INT32,
-                });
-                raw_load->name = nullptr;
-                raw_load->used_by = {
-                    .buffer = nullptr,
-                    .len = 0,
-                    .kind = KOOPA_RSIK_VALUE,
-                };
-                raw_load->kind.tag = KOOPA_RVT_LOAD;
-                raw_load->kind.data.load.src = value;
-                lval_last_bb->insts.buffer[lval_last_bb->insts.len-1] = raw_load;
-                return lval_bbs_vec;
-            }
+            case KOOPA_RVT_GLOBAL_ALLOC:
             case KOOPA_RVT_GET_ELEM_PTR:
             {
-                auto raw_load = new koopa_raw_value_data_t;
-                raw_load->ty = new koopa_raw_type_kind_t({
-                    .tag = KOOPA_RTT_INT32,
+                auto load = new koopa_raw_value_data_t({
+                    .ty = new koopa_raw_type_kind_t({
+                        .tag = KOOPA_RTT_INT32,
+                    }),
+                    .name = nullptr,
+                    .used_by = {
+                        .buffer = nullptr,
+                        .len = 0,
+                        .kind = KOOPA_RSIK_VALUE,
+                    },
+                    .kind = {
+                        .tag = KOOPA_RVT_LOAD,
+                        .data = {
+                            .load = {
+                                .src = value,
+                            },
+                        },
+                    },
                 });
-                raw_load->name = nullptr;
-                raw_load->used_by = {
-                    .buffer = nullptr,
-                    .len = 0,
-                    .kind = KOOPA_RSIK_VALUE,
-                };
-                raw_load->kind.tag = KOOPA_RVT_LOAD;
-                raw_load->kind.data.load.src = value;
-                auto buffer = new const void*[lval_last_bb->insts.len + 1];
-                for (int i = 0; i < lval_last_bb->insts.len; i++) {
-                    buffer[i] = lval_last_bb->insts.buffer[i];
-                }
-                buffer[lval_last_bb->insts.len] = raw_load;
-                lval_last_bb->insts.len += 1;
-                lval_last_bb->insts.buffer = buffer;
-                return lval_bbs_vec;
+                current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({load})));
+                return load;
             }
             default:
                 assert(false);
@@ -1100,11 +948,7 @@ void *PrimaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
     }
     case NUMBER:
     {
-        auto raw_number = build_number(number);
-        auto insts = new std::vector<koopa_raw_value_data*>({raw_number});
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-        bbs_vec->push_back(build_block_from_insts(insts));
-        return bbs_vec;
+        return build_number(number);
     }
     default:
         assert(false);
@@ -1122,10 +966,7 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             return unary_exp->toRaw();
         }
     {
-        auto bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)unary_exp->toRaw();
-        auto last_bb = bbs_vec->back();
-        auto value = (koopa_raw_value_data_t*)(last_bb->insts.buffer[last_bb->insts.len-1]);
-        
+        auto value = (koopa_raw_value_data_t*)unary_exp->toRaw();
         if (value->kind.tag == KOOPA_RVT_INTEGER) {
             int val = value->kind.data.integer.value;
             switch (unaryop) {
@@ -1138,11 +979,10 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             default:
                 assert(false);
             }
-            last_bb->insts.buffer[last_bb->insts.len-1] = build_number(val, nullptr);
-            return bbs_vec;
+            return build_number(val);
         }
 
-        auto raw_unary = new koopa_raw_value_data_t({
+        auto unary = new koopa_raw_value_data_t({
             .ty = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_INT32,
             }),
@@ -1165,22 +1005,20 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 
         switch (unaryop) {
         case '-':
-            raw_unary->kind.data.binary.op = KOOPA_RBO_SUB;
+            unary->kind.data.binary.op = KOOPA_RBO_SUB;
             break;
         case '!':
-            raw_unary->kind.data.binary.op = KOOPA_RBO_EQ;
+            unary->kind.data.binary.op = KOOPA_RBO_EQ;
             break;
         default:
             assert(false);
         }
-
-        auto unary_bb = build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_unary}));
-        bbs_vec->push_back(unary_bb);
-        return bbs_vec;
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({unary})));
+        return unary;
     }
     case FUNC_CALL:
     {
-        auto raw = new koopa_raw_value_data_t({
+        auto call = new koopa_raw_value_data_t({
             .ty = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_INT32,
             }),
@@ -1203,51 +1041,33 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             },
         });
 
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
         auto params = new std::vector<koopa_raw_value_data_t*>();
         
         for (auto &exp : *func_r_param_list) {
-            auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp->toRaw();
-            auto exp_last_bb = exp_bbs_vec->back();
-            auto exp_value = (koopa_raw_value_data_t*)exp_last_bb->insts.buffer[exp_last_bb->insts.len-1];
+            auto exp_value = (koopa_raw_value_data_t*)exp->toRaw();
             params->push_back(exp_value);
-
-            for (auto bb : *exp_bbs_vec) {
-                bbs_vec->push_back(bb);
-            }
         }
-        raw->kind.data.call.args.len = params->size();
-        raw->kind.data.call.args.kind = KOOPA_RSIK_VALUE;
-        raw->kind.data.call.args.buffer = new const void* [params->size()];
+        call->kind.data.call.args.len = params->size();
+        call->kind.data.call.args.buffer = new const void* [params->size()];
         for (int i = 0; i < params->size(); i++) {
-            raw->kind.data.call.args.buffer[i] = params->at(i);
+            call->kind.data.call.args.buffer[i] = params->at(i);
         }
-        auto insts = new std::vector<koopa_raw_value_data_t*>();
-        insts->push_back(raw);
-        auto call_bb = build_block_from_insts(insts);
-        bbs_vec->push_back(call_bb);
-        return bbs_vec;
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({call})));
+        return call;
     }
     default:
         assert(false);
     }
-
 }
 
 void *MulExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     if (type == UNARY)
         return unary_exp->toRaw();
-
     assert(type == MUL);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)mul_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)unary_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)mul_exp->toRaw();
+    auto right_value = (koopa_raw_value_data_t*)unary_exp->toRaw();
 
     if (left_value->kind.tag == KOOPA_RVT_INTEGER && right_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
@@ -1267,160 +1087,112 @@ void *MulExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             assert(false);
         }
 
-        // left_last_bb->insts.len -= 1;
-        // left_last_bb->insts.buffer = new const void*[left_last_bb->insts.len];
-        // for (int i = 0; i < left_last_bb->insts.len; i++) {
-        //     left_last_bb->insts.buffer[i] = left_last_bb->insts.buffer[i];
-        // }
-        // right_last_bb->insts.buffer[right_last_bb->insts.len - 1] = build_number(result, nullptr);
-        // for (auto bb : *right_bbs_vec) {
-        //     left_bbs_vec->push_back(bb);
-        // }
-        // return left_bbs_vec;
-
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        insts->push_back(build_number(result, nullptr));
-        bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-        return bbs_vec;
+        return build_number(result);
     }
 
-    auto raw = new koopa_raw_value_data_t;
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
-    raw->name = nullptr;
-    raw->kind.tag = KOOPA_RVT_BINARY;
+    auto mul = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .lhs = left_value,
+                    .rhs = right_value,
+                },
+            },
+        },
+    });
 
     switch (op)
     {
     case '*':
-        raw->kind.data.binary.op = KOOPA_RBO_MUL;
+        mul->kind.data.binary.op = KOOPA_RBO_MUL;
         break;
     case '/':
-        raw->kind.data.binary.op = KOOPA_RBO_DIV;
+        mul->kind.data.binary.op = KOOPA_RBO_DIV;
         break;
     case '%':
-        raw->kind.data.binary.op = KOOPA_RBO_MOD;
+        mul->kind.data.binary.op = KOOPA_RBO_MOD;
         break;
     default:
         assert(false);
     }
-
-    raw->kind.data.binary.lhs = left_value;
-    raw->kind.data.binary.rhs = right_value;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER)
-        right_last_bb->insts.len -= 1;
-    
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    auto last_bb = left_bbs_vec->back();
-    auto buffer = new const void*[last_bb->insts.len + 1];
-    for (int i = 0; i < last_bb->insts.len; i++) {
-        buffer[i] = last_bb->insts.buffer[i];
-    }
-    buffer[last_bb->insts.len] = raw;
-    last_bb->insts.len += 1;
-    last_bb->insts.buffer = buffer;
-    return left_bbs_vec;
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({mul})));
+    return mul;
 }
 
 void *AddExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     if (type == MUL)
         return mul_exp->toRaw();
-    
     assert(type == ADD);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)add_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)mul_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)add_exp->toRaw();
+    auto right_value = (koopa_raw_value_data_t*)mul_exp->toRaw();
 
     if (left_value->kind.tag == KOOPA_RVT_INTEGER && right_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
         int right = right_value->kind.data.integer.value;
         int result;
-        switch (op) {
-        case '+':
+        if (op == '+') {
             result = left + right;
-            break;
-        case '-':
+        } else if (op == '-') {
             result = left - right;
-            break;
-        default:
+        } else {
             assert(false);
         }
-
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        insts->push_back(build_number(result, nullptr));
-        bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-        return bbs_vec;
+        
+        return build_number(result);
     }
 
-    auto raw = new koopa_raw_value_data_t;
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
-    raw->name = nullptr;
-    raw->kind.tag = KOOPA_RVT_BINARY;
-    
-    switch (op)
-    {
-    case '+':
-        raw->kind.data.binary.op = KOOPA_RBO_ADD;
-        break;
-    case '-':
-        raw->kind.data.binary.op = KOOPA_RBO_SUB;
-        break;
-    default:
+    auto add = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .lhs = left_value,
+                    .rhs = right_value,
+                },
+            },
+        },
+    });
+
+    if (op == '+') {
+        add->kind.data.binary.op = KOOPA_RBO_ADD;
+    } else if (op == '-') {
+        add->kind.data.binary.op = KOOPA_RBO_SUB;
+    } else {
         assert(false);
     }
-
-    raw->kind.data.binary.lhs = left_value;
-    raw->kind.data.binary.rhs = right_value;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER)
-        right_last_bb->insts.len -= 1;
-
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    auto last_bb = left_bbs_vec->back();
-    auto buffer = new const void*[last_bb->insts.len + 1];
-    for (int i = 0; i < last_bb->insts.len; i++) {
-        buffer[i] = last_bb->insts.buffer[i];
-    }
-    buffer[last_bb->insts.len] = raw;
-    last_bb->insts.len += 1;
-    last_bb->insts.buffer = buffer;
-    return left_bbs_vec;
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({add})));
+    return add;
 }
 
 void *RelExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     if (type == ADD)
         return add_exp->toRaw();
-    
     assert(type == REL);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)rel_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)add_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)rel_exp->toRaw();
+    auto right_value = (koopa_raw_value_data_t*)add_exp->toRaw();
 
     if (left_value->kind.tag == KOOPA_RVT_INTEGER && right_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
@@ -1437,69 +1209,53 @@ void *RelExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         } else {
             assert(false);
         }
-        
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        insts->push_back(build_number(result, nullptr));
-        bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-        return bbs_vec;
+        return build_number(result);
     }
 
-    auto raw = new koopa_raw_value_data_t;
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
-    raw->name = nullptr;
-    raw->kind.tag = KOOPA_RVT_BINARY;
+    auto rel = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .lhs = left_value,
+                    .rhs = right_value,
+                },
+            },
+        },
+    });
 
     if (op == "<") {
-        raw->kind.data.binary.op = KOOPA_RBO_LT;
+        rel->kind.data.binary.op = KOOPA_RBO_LT;
     } else if (op == ">") {
-        raw->kind.data.binary.op = KOOPA_RBO_GT;
+        rel->kind.data.binary.op = KOOPA_RBO_GT;
     } else if (op == "<=") {
-        raw->kind.data.binary.op = KOOPA_RBO_LE;
+        rel->kind.data.binary.op = KOOPA_RBO_LE;
     } else if (op == ">=") {
-        raw->kind.data.binary.op = KOOPA_RBO_GE;
+        rel->kind.data.binary.op = KOOPA_RBO_GE;
     } else {
         assert(false);
     }
-
-    raw->kind.data.binary.lhs = left_value;
-    raw->kind.data.binary.rhs = right_value;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER)
-        right_last_bb->insts.len -= 1;
-
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    auto last_bb = left_bbs_vec->back();
-    auto buffer = new const void*[last_bb->insts.len + 1];
-    for (int i = 0; i < last_bb->insts.len; i++) {
-        buffer[i] = last_bb->insts.buffer[i];
-    }
-    buffer[last_bb->insts.len] = raw;
-    last_bb->insts.len += 1;
-    last_bb->insts.buffer = buffer;
-    return left_bbs_vec;
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({rel})));
+    return rel;
 }
 
 void *EqExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     if (type == REL)
         return rel_exp->toRaw();
-    
     assert(type == EQ);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)eq_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)rel_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)eq_exp->toRaw();
+    auto right_value = (koopa_raw_value_data_t*)rel_exp->toRaw();
 
     if (left_value->kind.tag == KOOPA_RVT_INTEGER && right_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
@@ -1512,49 +1268,39 @@ void *EqExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         } else {
             assert(false);
         }
-        
-        auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        insts->push_back(build_number(result, nullptr));
-        bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-        return bbs_vec;
+        return build_number(result);
     }
 
-    auto raw = new koopa_raw_value_data_t;
-    auto ty = new koopa_raw_type_kind_t;
-    ty->tag = KOOPA_RTT_INT32;
-    raw->ty = ty;
-    raw->name = nullptr;
-    raw->kind.tag = KOOPA_RVT_BINARY;
+    auto eq = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .lhs = left_value,
+                    .rhs = right_value,
+                },
+            },
+        },
+    });
 
     if (op == "==") {
-        raw->kind.data.binary.op = KOOPA_RBO_EQ;
+        eq->kind.data.binary.op = KOOPA_RBO_EQ;
     } else if (op == "!=") {
-        raw->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+        eq->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
     } else {
         assert(false);
     }
-
-    raw->kind.data.binary.lhs = left_value;
-    raw->kind.data.binary.rhs = right_value;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER)
-        right_last_bb->insts.len -= 1;
-
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    auto last_bb = left_bbs_vec->back();
-    auto buffer = new const void*[last_bb->insts.len + 1];
-    for (int i = 0; i < last_bb->insts.len; i++) {
-        buffer[i] = last_bb->insts.buffer[i];
-    }
-    buffer[last_bb->insts.len] = raw;
-    last_bb->insts.len += 1;
-    last_bb->insts.buffer = buffer;
-    return left_bbs_vec;
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({eq})));
+    return eq;
 }
 
 void *LAndExpAST::toRaw(int n = 0, void* args[] = nullptr) const 
@@ -1567,163 +1313,160 @@ void *LAndExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 //                  \                                           \--  不能 --> ne rhs, 0
 //                   \
 //                    - 不能:
-//                      %lhs:
-//                          ...
-//                          br lhs %rhs %end(0)
-//                      %rhs:
-//                          ...
+//                          ...(lhs)
+//                      %:
+//                          br lhs %rhs_entry %end(0)
+//                      %rhs_entry:
+//                          ...(rhs)
+//                      %:
 //                          %0 = ne rhs 0
 //                          jmp %end(%0)
-//                      %end(%value: i32):
-//                          %1 = %value
+//                      %land_end(%value: i32):
+//                          %value 即为表达式的值
 {
     if (type == EQ)
         return eq_exp->toRaw();
-    
     assert(type == LAND);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)land_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)eq_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)land_exp->toRaw();
 
     // lhs能判断值
     if (left_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
         // lhs为false，放一个0
         if (left == 0) {
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            insts->push_back(build_number(0, nullptr));
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            return build_number(0);
         }
         // lhs为true
+        auto right_value = (koopa_raw_value_data_t*)eq_exp->toRaw();
         // rhs能判断值，lhs && rhs
         if (right_value->kind.tag == KOOPA_RVT_INTEGER) {
             int right = right_value->kind.data.integer.value;
             int result = left && right;
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            insts->push_back(build_number(result, nullptr));
-            bbs_vec->push_back(build_block_from_insts(insts, nullptr));
-            return bbs_vec;
+            return build_number(result);
         }
         // rhs不能判断值，ne rhs, 0
-        auto raw_right = new koopa_raw_value_data_t;
-        auto ty_right = new koopa_raw_type_kind_t;
-        ty_right->tag = KOOPA_RTT_INT32;
-        raw_right->ty = ty_right;
-        raw_right->name = nullptr;
-        raw_right->kind.tag = KOOPA_RVT_BINARY;
-        raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
-
-        auto zero_right = build_number(0);
-        raw_right->kind.data.binary.lhs = zero_right;
-        raw_right->kind.data.binary.rhs = right_value;
-
-        right_last_bb->insts.len += 1;
-        auto buffer = new const void*[right_last_bb->insts.len];
-        for (int i = 0; i < right_last_bb->insts.len - 1; i++) {
-            buffer[i] = right_last_bb->insts.buffer[i];
-        }
-        buffer[right_last_bb->insts.len - 1] = raw_right;
-        right_last_bb->insts.buffer = buffer;
-        return right_bbs_vec;
+        auto ne = new koopa_raw_value_data_t({
+            .ty = new koopa_raw_type_kind_t({
+                .tag = KOOPA_RTT_INT32,
+            }),
+            .name = nullptr,
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_BINARY,
+                .data = {
+                    .binary = {
+                        .op = KOOPA_RBO_NOT_EQ,
+                        .lhs = right_value,
+                        .rhs = build_number(0),
+                    },
+                },
+            },
+        });
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({ne})));
+        return ne;
     }
 
-    // lhs不能判断值（其实还可以做rhs的判断，但比较麻烦，先不写了）
+    // lhs不能判断值
     // end_bb
-    auto raw_param = new koopa_raw_value_data_t;
-    auto ty_param = new koopa_raw_type_kind_t;
-    ty_param->tag = KOOPA_RTT_INT32;
-    raw_param->ty = ty_param;
-    raw_param->name = "%value";
-    raw_param->kind.tag = KOOPA_RVT_BLOCK_ARG_REF;
-    raw_param->kind.data.block_arg_ref.index = 0;
-    raw_param->used_by = {
-        .buffer = nullptr,
-        .len = 0,
+    auto end_param = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = "%value",
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BLOCK_ARG_REF,
+            .data = {
+                .block_arg_ref = {
+                    .index = 0,
+                },
+            },
+        },
+    });
+
+    auto end_bb = new koopa_raw_basic_block_data_t({
+        .name = "%land_end",
+        .params = {
+            .buffer = new const void* [1],
+            .len = 1,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .insts = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+    });
+    end_bb->params.buffer[0] = end_param;
+
+    // br
+    auto false_args = new koopa_raw_slice_t({
+        .buffer = new const void*[1],
+        .len = 1,
         .kind = KOOPA_RSIK_VALUE,
-    };
-
-    auto end_bb = new koopa_raw_basic_block_data_t;
-    end_bb->name = "%end";
-    end_bb->insts.len = 1;
-    end_bb->insts.buffer = new const void*[1];
-    end_bb->insts.buffer[0] = raw_param;
-    end_bb->insts.kind = KOOPA_RSIK_VALUE;
-
-    end_bb->params.len = 1;
-    end_bb->params.buffer = new const void*[1];
-    end_bb->params.buffer[0] = raw_param;
-    end_bb->params.kind = KOOPA_RSIK_VALUE;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER || left_value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER || right_value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF)
-        right_last_bb->insts.len -= 1;
-
-    // lhs
-    auto false_args = new koopa_raw_slice_t;
-    false_args->len = 1;
-    false_args->kind = KOOPA_RSIK_VALUE;
-    false_args->buffer = new const void*[1];
+    });
     false_args->buffer[0] = build_number(0);
 
-    left_last_bb->insts.len += 1;
-    auto left_buffer = new const void*[left_last_bb->insts.len];
-    for (int i = 0; i < left_last_bb->insts.len - 1; i++) {
-        left_buffer[i] = left_last_bb->insts.buffer[i];
-    }
-    left_buffer[left_last_bb->insts.len - 1] = build_branch(left_value, right_bbs_vec->front(), end_bb, nullptr, false_args);
-    left_last_bb->insts.buffer = left_buffer;
+    auto rhs_entry = build_block_from_insts(nullptr, "%rhs_entry");
 
-    // rhs
-    auto raw_right = new koopa_raw_value_data_t;
-    auto ty_right = new koopa_raw_type_kind_t;
-    ty_right->tag = KOOPA_RTT_INT32;
-    raw_right->ty = ty_right;
-    raw_right->name = nullptr;
-    raw_right->kind.tag = KOOPA_RVT_BINARY;
-    raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+    auto branch = build_branch(left_value, rhs_entry, end_bb, nullptr, false_args);
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch})));
 
-    auto zero_right = build_number(0, raw_right);
-    raw_right->kind.data.binary.lhs = zero_right;
-    raw_right->kind.data.binary.rhs = right_value;
-    right_value->used_by = {
-        .buffer = nullptr,
-        .len = 0,
+    current_bbs.push_back(rhs_entry);
+
+    auto right_value = (koopa_raw_value_data_t*)eq_exp->toRaw();
+
+    // ne  
+    auto ne = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .op = KOOPA_RBO_NOT_EQ,
+                    .lhs = right_value,
+                    .rhs = build_number(0),
+                },
+            },
+        },
+    });
+    // jmp
+    auto jmp_args = new koopa_raw_slice_t({
+        .buffer = new const void*[1],
+        .len = 1,
         .kind = KOOPA_RSIK_VALUE,
-    };
+    });
+    jmp_args->buffer[0] = ne;
 
-    auto jmp_args = new koopa_raw_slice_t;
-    jmp_args->len = 1;
-    jmp_args->kind = KOOPA_RSIK_VALUE;
-    jmp_args->buffer = new const void*[1];
-    jmp_args->buffer[0] = raw_right;
+    auto jmp = build_jump(end_bb, jmp_args);
+    
+    auto insts = new std::vector<koopa_raw_value_data_t*>({ne, jmp});
+    current_bbs.push_back(build_block_from_insts(insts));
 
-    right_last_bb->insts.len += 2;
-    auto right_buffer = new const void*[right_last_bb->insts.len];
-    for (int i = 0; i < right_last_bb->insts.len - 2; i++) {
-        right_buffer[i] = right_last_bb->insts.buffer[i];
-    }
-    right_buffer[right_last_bb->insts.len - 2] = raw_right;
-    right_buffer[right_last_bb->insts.len - 1] = build_jump(end_bb, jmp_args);
-    right_last_bb->insts.buffer = right_buffer;
-
-    auto right_first_bb = right_bbs_vec->front();
-    if (right_first_bb->name == nullptr)
-        right_first_bb->name = "%rhs";
-
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    left_bbs_vec->push_back(end_bb);
-    return left_bbs_vec;
+    current_bbs.push_back(end_bb);
+    return end_param;
 }
 
 void *LOrExpAST::toRaw(int n = 0, void* args[] = nullptr) const  
@@ -1736,164 +1479,161 @@ void *LOrExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 //                  \                                           \--  不能 --> ne rhs, 0
 //                   \
 //                    - 不能:
-//                      %lhs:
-//                          ...
-//                          br lhs %end(1) %rhs
-//                      %rhs:
-//                          ...
+//                          ...(lhs)
+//                      %:
+//                          br lhs %end(1) %rhs_entry
+//                      %rhs_entry:
+//                          ...(rhs)
+//                      %:
 //                          %0 = ne rhs 0
 //                          jmp %end(%0)
-//                      %end(%value: i32):
-//                          %1 = %value
+//                      %lor_end(%value: i32):
+//                          %value 即为表达式的值
 {
     if (type == LAND)
         return land_exp->toRaw();
-
     assert(type == LOR);
 
-    auto left_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)lor_exp->toRaw();
-    auto left_last_bb = left_bbs_vec->back();
-    auto left_value = (koopa_raw_value_data_t*)left_last_bb->insts.buffer[left_last_bb->insts.len - 1];
-
-    auto right_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)land_exp->toRaw();
-    auto right_last_bb = right_bbs_vec->back();
-    auto right_value = (koopa_raw_value_data_t*)right_last_bb->insts.buffer[right_last_bb->insts.len - 1];
+    auto left_value = (koopa_raw_value_data_t*)lor_exp->toRaw();
 
     // lhs能判断值
     if (left_value->kind.tag == KOOPA_RVT_INTEGER) {
         int left = left_value->kind.data.integer.value;
         // lhs为true，放一个1
         if (left != 0) {
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            insts->push_back(build_number(1));
-            bbs_vec->push_back(build_block_from_insts(insts));
-            return bbs_vec;
+            return build_number(1);
         }
         // lhs为false
+        auto right_value = (koopa_raw_value_data_t*)land_exp->toRaw();
         // rhs能判断值，lhs || rhs
         if (right_value->kind.tag == KOOPA_RVT_INTEGER) {
             int right = right_value->kind.data.integer.value;
             int result = left || right;
-            auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            insts->push_back(build_number(result));
-            bbs_vec->push_back(build_block_from_insts(insts));
-            return bbs_vec;
+            return build_number(result);
         }
         // rhs不能判断值，ne rhs, 0
-        auto raw_right = new koopa_raw_value_data_t;
-        auto ty_right = new koopa_raw_type_kind_t;
-        ty_right->tag = KOOPA_RTT_INT32;
-        raw_right->ty = ty_right;
-        raw_right->name = nullptr;
-        raw_right->kind.tag = KOOPA_RVT_BINARY;
-        raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
-
-        auto zero_right = build_number(0);
-        raw_right->kind.data.binary.lhs = right_value;
-        raw_right->kind.data.binary.rhs = zero_right;
-
-        right_last_bb->insts.len += 1;
-        auto buffer = new const void*[right_last_bb->insts.len];
-        for (int i = 0; i < right_last_bb->insts.len - 1; i++) {
-            buffer[i] = right_last_bb->insts.buffer[i];
-        }
-        buffer[right_last_bb->insts.len - 1] = raw_right;
-        right_last_bb->insts.buffer = buffer;
-        return right_bbs_vec;
+        auto ne = new koopa_raw_value_data_t({
+            .ty = new koopa_raw_type_kind_t({
+                .tag = KOOPA_RTT_INT32,
+            }),
+            .name = nullptr,
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_BINARY,
+                .data = {
+                    .binary = {
+                        .op = KOOPA_RBO_NOT_EQ,
+                        .lhs = right_value,
+                        .rhs = build_number(0),
+                    },
+                },
+            },
+        });
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({ne})));
+        return ne;
     }
 
     // lhs不能判断值
     // end_bb
-    auto raw_param = new koopa_raw_value_data_t;
-    auto ty_param = new koopa_raw_type_kind_t;
-    ty_param->tag = KOOPA_RTT_INT32;
-    raw_param->ty = ty_param;
-    raw_param->name = "%value";
-    raw_param->kind.tag = KOOPA_RVT_BLOCK_ARG_REF;
-    raw_param->kind.data.block_arg_ref.index = 0;
-    raw_param->used_by = {
-        .buffer = nullptr,
-        .len = 0,
+    auto end_param = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = "%value",
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BLOCK_ARG_REF,
+            .data = {
+                .block_arg_ref = {
+                    .index = 0,
+                },
+            },
+        },
+    });
+
+    auto end_bb = new koopa_raw_basic_block_data_t({
+        .name = "%lor_end",
+        .params = {
+            .buffer = new const void* [1],
+            .len = 1,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .insts = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+    });
+    end_bb->params.buffer[0] = end_param;
+
+    // br
+    auto true_args = new koopa_raw_slice_t({
+        .buffer = new const void*[1],
+        .len = 1,
         .kind = KOOPA_RSIK_VALUE,
-    };
-
-    auto end_bb = new koopa_raw_basic_block_data_t;
-    end_bb->name = "%end";
-    end_bb->insts.len = 1;
-    end_bb->insts.buffer = new const void*[1];
-    end_bb->insts.buffer[0] = raw_param;
-    end_bb->insts.kind = KOOPA_RSIK_VALUE;
-
-    end_bb->params.len = 1;
-    end_bb->params.buffer = new const void*[1];
-    end_bb->params.buffer[0] = raw_param;
-    end_bb->params.kind = KOOPA_RSIK_VALUE;
-
-    if (left_value->kind.tag == KOOPA_RVT_INTEGER || left_value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF)
-        left_last_bb->insts.len -= 1;
-    if (right_value->kind.tag == KOOPA_RVT_INTEGER || right_value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF)
-        right_last_bb->insts.len -= 1;
-
-    // lhs
-    auto true_args = new koopa_raw_slice_t;
-    true_args->len = 1;
-    true_args->kind = KOOPA_RSIK_VALUE;
-    true_args->buffer = new const void*[1];
+    });
     true_args->buffer[0] = build_number(1);
-    
-    left_last_bb->insts.len += 1;
-    auto left_buffer = new const void*[left_last_bb->insts.len];
-    for (int i = 0; i < left_last_bb->insts.len - 1; i++) {
-        left_buffer[i] = left_last_bb->insts.buffer[i];
-    }
-    left_buffer[left_last_bb->insts.len - 1] = build_branch(left_value, end_bb, right_bbs_vec->front(), true_args);
-    left_last_bb->insts.buffer = left_buffer;
 
-    // rhs
-    auto raw_right = new koopa_raw_value_data_t;
-    auto ty_right = new koopa_raw_type_kind_t;
-    ty_right->tag = KOOPA_RTT_INT32;
-    raw_right->ty = ty_right;
-    raw_right->name = nullptr;
-    raw_right->kind.tag = KOOPA_RVT_BINARY;
-    raw_right->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+    auto rhs_entry = build_block_from_insts(nullptr, "%rhs_entry");
 
-    auto zero_right = build_number(0, raw_right);
-    raw_right->kind.data.binary.lhs = zero_right;
-    raw_right->kind.data.binary.rhs = right_value;
-    right_value->used_by = {
-        .buffer = nullptr,
-        .len = 0,
+    auto branch = build_branch(left_value, end_bb, rhs_entry, true_args, nullptr);
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({branch})));
+
+    current_bbs.push_back(rhs_entry);
+
+    auto right_value = (koopa_raw_value_data_t*)land_exp->toRaw();
+
+    // ne
+    auto ne = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .op = KOOPA_RBO_NOT_EQ,
+                    .lhs = right_value,
+                    .rhs = build_number(0),
+                },
+            },
+        },
+    });
+
+    // jmp
+    auto jmp_args = new koopa_raw_slice_t({
+        .buffer = new const void*[1],
+        .len = 1,
         .kind = KOOPA_RSIK_VALUE,
-    };
-    
-    auto jmp_args = new koopa_raw_slice_t;
-    jmp_args->len = 1;
-    jmp_args->kind = KOOPA_RSIK_VALUE;
-    jmp_args->buffer = new const void*[1];
-    jmp_args->buffer[0] = raw_right;
+    });
+    jmp_args->buffer[0] = ne;
 
-    right_last_bb->insts.len += 2;
-    auto right_buffer = new const void*[right_last_bb->insts.len];
-    for (int i = 0; i < right_last_bb->insts.len - 2; i++) {
-        right_buffer[i] = right_last_bb->insts.buffer[i];
-    }
-    right_buffer[right_last_bb->insts.len - 2] = raw_right;
-    right_buffer[right_last_bb->insts.len - 1] = build_jump(end_bb, jmp_args);
-    right_last_bb->insts.buffer = right_buffer;
+    auto jmp = build_jump(end_bb, jmp_args);
 
-    auto right_first_bb = right_bbs_vec->front();
-    if (right_first_bb->name == nullptr)
-        right_first_bb->name = "%rhs";
+    auto insts = new std::vector<koopa_raw_value_data_t*>({ne, jmp});
+    current_bbs.push_back(build_block_from_insts(insts));
 
-    for (auto bb : *right_bbs_vec) {
-        left_bbs_vec->push_back(bb);
-    }
-    left_bbs_vec->push_back(end_bb);
-
-    return left_bbs_vec;
+    current_bbs.push_back(end_bb);
+    return end_param;
 }
 
 void *DeclAST::toRaw(int n = 0, void* args[] = nullptr) const
@@ -1901,49 +1641,31 @@ void *DeclAST::toRaw(int n = 0, void* args[] = nullptr) const
     switch (type)
     {
     case CONSTDECL:
-        return const_decl->toRaw(n, args);
+        const_decl->toRaw(n, args);
+        break;
     case VARDECL:
-        return var_decl->toRaw(n, args);
+        var_decl->toRaw(n, args);
+        break;
     default:
         assert(false);
     }
+    return nullptr;
 }
 
 void *ConstDeclAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    auto insts = new std::vector<koopa_raw_value_data*>();
     for (auto &i : *const_def_list) {
-        auto def_insts = (std::vector<koopa_raw_value_data*>*)i->toRaw(n, args);
-        for (auto inst : *def_insts) {
-            insts->push_back(inst);
-        }
+        i->toRaw(n, args);
     }
-    if (n == 1) {
-        return insts;
-    }
-    return new std::vector<koopa_raw_basic_block_data_t*>({build_block_from_insts(insts)});
+    return nullptr;
 }
 
 void *VarDeclAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    if (n == 1) {
-        auto insts = new std::vector<koopa_raw_value_data_t*>();
-        for (auto &i : *var_def_list) {
-            auto def_insts = (std::vector<koopa_raw_value_data_t*>*)i->toRaw(n, args);
-            for (auto inst : *def_insts) {
-                insts->push_back(inst);
-            }
-        }
-        return insts;
-    }
-    auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
     for (auto &i : *var_def_list) {
-        auto def_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)i->toRaw(n, args);
-        for (auto bb : *def_bbs_vec) {
-            bbs_vec->push_back(bb);
-        }
+        i->toRaw(n, args);
     }
-    return bbs_vec;
+    return nullptr;
 }
 
 void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
@@ -1959,10 +1681,24 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     if (dim_list == nullptr) {
         int val = result_vec->front();
         Symbol::insert(ident, Symbol::TYPE_CONST, val);
-        return new std::vector<koopa_raw_value_data*>();
+        return nullptr;
     } else if (n == 1) { // global def
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        auto raw_global_alloc = new koopa_raw_value_data_t;
+        auto global_alloc = new koopa_raw_value_data_t({
+            .name = build_ident(ident, '@'),
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_GLOBAL_ALLOC,
+                .data = {
+                    .global_alloc = {
+                        .init = build_aggregate(dim_vec, result_vec),
+                    },
+                },
+            },
+        });
         auto ty_integer = new koopa_raw_type_kind_t({
             .tag = KOOPA_RTT_INT32,
         });
@@ -1979,7 +1715,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             });
             temp_ty = ty_array;
         }
-        raw_global_alloc->ty = new koopa_raw_type_kind_t({
+        global_alloc->ty = new koopa_raw_type_kind_t({
             .tag = KOOPA_RTT_POINTER,
             .data = {
                 .pointer = {
@@ -1987,22 +1723,22 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
             },
         });
-        auto raw_aggregate = build_aggregate(dim_vec, result_vec);
-        raw_global_alloc->name = build_ident(ident, '@');
-        raw_global_alloc->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
-        raw_global_alloc->kind.data.global_alloc.init = raw_aggregate;
-        raw_global_alloc->used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        };
-        insts->push_back(raw_global_alloc);
-        Symbol::insert(ident, Symbol::TYPE_CONST, raw_global_alloc);
-        return insts;
+        Symbol::insert(ident, Symbol::TYPE_CONST, global_alloc);
+        global_values.push_back(global_alloc);
+        return nullptr;
 
     } else {
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        auto raw_alloc = new koopa_raw_value_data_t;
+        auto alloc = new koopa_raw_value_data_t({
+            .name = build_ident(ident, '@'),
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_ALLOC,
+            },
+        });
         auto ty_integer = new koopa_raw_type_kind_t({
             .tag = KOOPA_RTT_INT32,
         });
@@ -2019,7 +1755,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             });
             temp_ty = ty_array;
         }
-        raw_alloc->ty = new koopa_raw_type_kind_t({
+        alloc->ty = new koopa_raw_type_kind_t({
             .tag = KOOPA_RTT_POINTER,
             .data = {
                 .pointer = {
@@ -2027,45 +1763,11 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
             },
         });
-        raw_alloc->name = build_ident(ident, '@');
-        raw_alloc->kind.tag = KOOPA_RVT_ALLOC;
-        raw_alloc->used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        };
-        Symbol::insert(ident, Symbol::TYPE_CONST, raw_alloc);
-        insts->push_back(raw_alloc);
-        auto raw_aggregate = build_aggregate(dim_vec, result_vec);
-        auto raw_store = build_store(raw_aggregate, raw_alloc);
-        insts->push_back(raw_store);
-        return insts;
-
-        // for (; pos < raw_base->data.array.len; pos++) {
-        //     auto raw_get_elem_ptr = new koopa_raw_value_data_t;
-        //     raw_get_elem_ptr->name = nullptr;
-        //     raw_get_elem_ptr->ty = new koopa_raw_type_kind_t({
-        //         .tag = KOOPA_RTT_POINTER,
-        //         .data = {
-        //             .pointer = {
-        //                 .base = new koopa_raw_type_kind_t({
-        //                     .tag = KOOPA_RTT_INT32,
-        //                 }),
-        //             },
-        //         },
-        //     });
-        //     raw_get_elem_ptr->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
-        //     raw_get_elem_ptr->kind.data.get_elem_ptr.src = raw_alloc;
-        //     raw_get_elem_ptr->kind.data.get_elem_ptr.index = build_number(pos);
-        //     raw_get_elem_ptr->used_by = {
-        //         .buffer = nullptr,
-        //         .len = 0,
-        //         .kind = KOOPA_RSIK_VALUE,
-        //     };
-        //     auto raw_store = build_store(build_number(0), raw_get_elem_ptr);
-        //     insts->push_back(raw_get_elem_ptr);
-        //     insts->push_back(raw_store);
-        // }
+        Symbol::insert(ident, Symbol::TYPE_CONST, alloc);
+        auto aggregate = build_aggregate(dim_vec, result_vec);
+        auto store = build_store(aggregate, alloc);
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({alloc, store})));
+        return nullptr;
     }
 }
 
@@ -2077,11 +1779,35 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             dim_vec->push_back((long)(*i)->toRaw());
         }
     auto result_vec = new std::vector<void*>();
-    init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
+    if (has_init_val)
+        init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
     if (dim_list != nullptr) {
+        if (!has_init_val) {
+            int len = 1;
+            for (auto i : *dim_vec) {
+                len *= i;
+            }
+            for (int i = 0; i < len; i++) {
+                result_vec->push_back(build_number(0));
+            }
+        }
         if (n == 1) { // global def
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            auto raw_global_alloc = new koopa_raw_value_data_t;
+            auto global_alloc = new koopa_raw_value_data_t({
+                .name = build_ident(ident, '@'),
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_GLOBAL_ALLOC,
+                    .data = {
+                        .global_alloc = {
+                            .init = build_aggregate(dim_vec, result_vec),
+                        }
+                    }
+                }
+            });
             auto ty_integer = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_INT32,
             });
@@ -2098,7 +1824,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 });
                 temp_ty = ty_array;
             }
-            raw_global_alloc->ty = new koopa_raw_type_kind_t({
+            global_alloc->ty = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_POINTER,
                 .data = {
                     .pointer = {
@@ -2106,22 +1832,22 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                     },
                 },
             });
-            auto raw_aggregate = build_aggregate(dim_vec, result_vec);
-            raw_global_alloc->name = build_ident(ident, '@');
-            raw_global_alloc->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
-            raw_global_alloc->kind.data.global_alloc.init = raw_aggregate;
-            raw_global_alloc->used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            };
-            insts->push_back(raw_global_alloc);
-            Symbol::insert(ident, Symbol::TYPE_CONST, raw_global_alloc);
-            return insts;
+            global_values.push_back(global_alloc);
+            Symbol::insert(ident, Symbol::TYPE_CONST, global_alloc);
+            return nullptr;
         }
         else {
-            auto insts = new std::vector<koopa_raw_value_data*>();
-            auto raw_alloc = new koopa_raw_value_data_t;
+            auto alloc = new koopa_raw_value_data_t({
+                .name = build_ident(ident, '@'),
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_ALLOC,
+                },
+            });
             auto ty_integer = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_INT32,
             });
@@ -2138,7 +1864,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 });
                 temp_ty = ty_array;
             }
-            raw_alloc->ty = new koopa_raw_type_kind_t({
+            alloc->ty = new koopa_raw_type_kind_t({
                 .tag = KOOPA_RTT_POINTER,
                 .data = {
                     .pointer = {
@@ -2146,92 +1872,74 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                     },
                 },
             });
-            raw_alloc->name = build_ident(ident, '@');
-            raw_alloc->kind.tag = KOOPA_RVT_ALLOC;
-            raw_alloc->used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            };
-            insts->push_back(raw_alloc);
-            Symbol::insert(ident, Symbol::TYPE_CONST, raw_alloc);
-            auto raw_aggregate = build_aggregate(dim_vec, result_vec);
-            auto raw_store = build_store(raw_aggregate, raw_alloc);
-            insts->push_back(raw_store);
-            return new std::vector<koopa_raw_basic_block_data_t*>({build_block_from_insts(insts)});
+            Symbol::insert(ident, Symbol::TYPE_CONST, alloc);
+            auto aggregate = build_aggregate(dim_vec, result_vec);
+            auto raw_store = build_store(aggregate, alloc);
+            current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({alloc, raw_store})));
+            return nullptr;
         }
     }
     // 不是数组
     if (n == 1) {
-        // global def, global_alloc, 返回的是insts
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        auto raw_global_alloc = new koopa_raw_value_data_t;
-        auto ty = new koopa_raw_type_kind_t;
-        ty->tag = KOOPA_RTT_POINTER;
-        auto raw_base = new koopa_raw_type_kind_t;
-        raw_base->tag = KOOPA_RTT_INT32;
-        ty->data.pointer.base = raw_base;
-
-        raw_global_alloc->ty = ty;
-        raw_global_alloc->name = build_ident(ident, '@');
-        raw_global_alloc->kind.tag = KOOPA_RVT_GLOBAL_ALLOC;
+        // global def
+        auto global_alloc = new koopa_raw_value_data_t({
+            .ty = new koopa_raw_type_kind_t({
+                .tag = KOOPA_RTT_POINTER,
+                .data = {
+                    .pointer = {
+                        .base = new koopa_raw_type_kind_t({
+                            .tag = KOOPA_RTT_INT32,
+                        }),
+                    },
+                },
+            }),
+            .name = build_ident(ident, '@'),
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_GLOBAL_ALLOC,
+            },
+        });
         if (has_init_val) {
-            auto exp_bbs = (std::vector<koopa_raw_basic_block_data_t*>*)result_vec->front();
-            auto exp_last_bb = exp_bbs->back();
-            auto val = (koopa_raw_value_data_t*)exp_last_bb->insts.buffer[exp_last_bb->insts.len - 1];
-            assert(val->kind.tag == KOOPA_RVT_INTEGER);
-            raw_global_alloc->kind.data.global_alloc.init = build_number(val->kind.data.integer.value);
+            global_alloc->kind.data.global_alloc.init = (koopa_raw_value_data_t*)result_vec->front();
         }
         else {
-            auto raw_zero_init = new koopa_raw_value_data_t;
-            raw_zero_init->name = nullptr;
-            {
-                auto ty = new koopa_raw_type_kind_t;
-                ty->tag = KOOPA_RTT_INT32;
-                raw_zero_init->ty = ty;
-            }
-            raw_zero_init->kind.tag = KOOPA_RVT_ZERO_INIT;
-            raw_global_alloc->kind.data.global_alloc.init = raw_zero_init;
+            global_alloc->kind.data.global_alloc.init = new koopa_raw_value_data_t({
+                .ty = new koopa_raw_type_kind_t({
+                    .tag = KOOPA_RTT_INT32,
+                }),
+                .name = nullptr,
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_ZERO_INIT,
+                },
+            });
         }
-        Symbol::insert(ident, Symbol::TYPE_VAR, raw_global_alloc);
-        insts->push_back(raw_global_alloc);
-        return insts;
+        global_values.push_back(global_alloc);
+        Symbol::insert(ident, Symbol::TYPE_VAR, global_alloc);
+        return nullptr;
     }
 
-    // local def, alloc, store, 返回的是bbs_vec
+    // local def
     // alloc
-    auto raw_alloc = build_alloc(build_ident(ident, '%'));
-    Symbol::insert(ident, Symbol::TYPE_VAR, raw_alloc);
+    auto alloc = build_alloc(build_ident(ident, '%'));
+    Symbol::insert(ident, Symbol::TYPE_VAR, alloc);
+    current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({alloc})));
 
     // store
     if (has_init_val) {
-        auto init_val_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)result_vec->front();
-        auto init_val_last_bb = init_val_bbs_vec->back();
-        auto value = (koopa_raw_value_data_t*)init_val_last_bb->insts.buffer[init_val_last_bb->insts.len - 1];
-        auto raw_store = build_store(value, raw_alloc);
-
-        if (value->kind.tag == KOOPA_RVT_INTEGER || value->kind.tag == KOOPA_RVT_BLOCK_ARG_REF) {
-            init_val_last_bb->insts.len -= 1;
-        }
-        
-        init_val_last_bb->insts.len += 2;
-        auto buffer = new const void*[init_val_last_bb->insts.len];
-        for (int i = 0; i < init_val_last_bb->insts.len - 2; i++) {
-            buffer[i] = init_val_last_bb->insts.buffer[i];
-        }
-        buffer[init_val_last_bb->insts.len - 2] = raw_alloc;
-        buffer[init_val_last_bb->insts.len - 1] = raw_store;
-
-        init_val_last_bb->insts.buffer = buffer;
-
-        return init_val_bbs_vec;
+        auto value = (koopa_raw_value_data_t*)result_vec->front();
+        auto raw_store = build_store(value, alloc);
+        current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({raw_store})));
     }
-    // no init_val
-    auto bbs_vec = new std::vector<koopa_raw_basic_block_data_t*>();
-    auto insts = new std::vector<koopa_raw_value_data*>();
-    insts->push_back(raw_alloc);
-    bbs_vec->push_back(build_block_from_insts(insts));
-    return bbs_vec;
+    return nullptr;
 }
 
 void *ConstInitValAST::toRaw(int n = 0, void* args[] = nullptr) const
@@ -2276,82 +1984,18 @@ void *InitValAST::toRaw(int n = 0, void* args[] = nullptr) const
         for (auto& i : *init_val_list) {
             i->toRaw(n, new void*[2]{dim_vec, result_vec});
         }
-        for (; result_vec->size() % alignment; result_vec->push_back(
-            new std::vector<koopa_raw_basic_block_data_t*>({
-                build_block_from_insts(
-                    new std::vector<koopa_raw_value_data_t*>({
-                        build_number(0)
-                    })
-                )
-            })
-        ));
-    }
+        for (; result_vec->size() % alignment || (!result_vec->size()); result_vec->push_back(build_number(0)));}
     return result_vec;
 }
 
 void *LValAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     if (index_list != nullptr) { // IDENT[Exp]
-        // auto insts = new std::vector<koopa_raw_value_data*>();
-        // auto exp_bbs_vec = (std::vector<koopa_raw_basic_block_data_t*>*)exp_list->toRaw();
-        // auto exp_last_bb = exp_bbs_vec->back();
-        // auto offset = (koopa_raw_value_data_t*)exp_last_bb->insts.buffer[exp_last_bb->insts.len - 1];
-        // auto raw_get_elem_ptr = new koopa_raw_value_data_t;
-        // raw_get_elem_ptr->name = nullptr;
-        // raw_get_elem_ptr->ty = new koopa_raw_type_kind_t({
-        //     .tag = KOOPA_RTT_POINTER,
-        //     .data = {
-        //         .pointer = {
-        //             .base = new koopa_raw_type_kind_t({
-        //                 .tag = KOOPA_RTT_INT32,
-        //             }),
-        //         },
-        //     },
-        // });
-        // auto value = Symbol::query(ident).allocator;
-        // raw_get_elem_ptr->kind.tag = KOOPA_RVT_GET_ELEM_PTR;
-        // raw_get_elem_ptr->kind.data.get_elem_ptr.src = value;
-        // raw_get_elem_ptr->kind.data.get_elem_ptr.index = offset;
-        // raw_get_elem_ptr->used_by = {
-        //     .buffer = nullptr,
-        //     .len = 0,
-        //     .kind = KOOPA_RSIK_VALUE,
-        // };
-        // insts->push_back(raw_get_elem_ptr);
 
-        // exp_bbs_vec->push_back(build_block_from_insts(insts));
-        
-        // return exp_bbs_vec;
-    } // val: get_elem_ptr
+    }
     auto sym = Symbol::query(ident);
     if (sym.type == Symbol::TYPE_CONST) {
-        auto raw = build_number(sym.int_value, nullptr);
-        auto insts = new std::vector<koopa_raw_value_data*>();
-        insts->push_back(raw);
-        return new std::vector<koopa_raw_basic_block_data_t*>({build_block_from_insts(insts)});
-    } // val: integer
-
-    // auto raw = new koopa_raw_value_data_t;
-
-    // auto ty = new koopa_raw_type_kind_t;
-    // ty->tag = KOOPA_RTT_POINTER;
-    // auto raw_base = new koopa_raw_type_kind_t;
-    // raw_base->tag = KOOPA_RTT_INT32;
-    // ty->data.pointer.base = raw_base;
-
-    // raw->ty = ty;
-    // raw->name = nullptr;
-    // raw->kind.tag = KOOPA_RVT_LOAD;
-
-    // raw->used_by = {
-    //     .buffer = nullptr,
-    //     .len = 0,
-    //     .kind = KOOPA_RSIK_VALUE,
-    // };
-    
-    // raw->kind.data.load.src = sym.allocator;
-
-    auto insts = new std::vector<koopa_raw_value_data*>();
-    insts->push_back(sym.allocator);
-    return new std::vector<koopa_raw_basic_block_data_t*>({build_block_from_insts(insts)}); // val: alloc
+        return build_number(sym.int_value);
+    }
+    return sym.allocator;
 }
