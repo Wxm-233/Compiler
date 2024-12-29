@@ -19,14 +19,21 @@ namespace Symbol {
     {
         if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
             assert(false);
-        symtab_stack[scope_level][ident] = {type, 0, allocator, nullptr};
+        symtab_stack[scope_level][ident] = {type, 0, allocator, nullptr, nullptr};
     }
 
     void insert(const std::string &ident, Type type, koopa_raw_function_data_t* function)
     {
         if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
             assert(false);
-        symtab_stack[scope_level][ident] = {type, 0, nullptr, function};
+        symtab_stack[scope_level][ident] = {type, 0, nullptr, function, nullptr};
+    }
+
+    void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator, std::vector<int>* dim_vec)
+    {
+        if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
+            assert(false);
+        symtab_stack[scope_level][ident] = {type, 0, allocator, nullptr, dim_vec};
     }
 
     symbol_val query(const std::string &ident)
@@ -36,7 +43,7 @@ namespace Symbol {
             if (symtab_stack[i].find(ident) != symtab_stack[i].end())
                 return symtab_stack[i][ident];
         }
-        return {TYPE_VAR, 0, nullptr, nullptr};
+        return {TYPE_VAR, 0, nullptr, nullptr, nullptr};
     }
 
     void enter_scope()
@@ -67,27 +74,4 @@ namespace Symbol {
     {
         return loop_stack.top().second;
     }
-}
-
-// namespace ConstSymbol {
-//     int scope_level = 0;
-//     std::vector<std::map<std::string, int>> symtab_stack;
-
-//     void insert(const std::string &ident, int int_value)
-//     {
-//         if (symtab_stack[scope_level].find(ident) != symtab_stack[scope_level].end())
-//             assert(false);
-//         symtab_stack[scope_level][ident] = int_value;
-//     }
-
-//     int query(const std::string &ident)
-//     {
-//         for (int i = scope_level; i >= 0; i--)
-//         {
-//             if (symtab_stack[i].find(ident) != symtab_stack[i].end())
-//                 return symtab_stack[i][ident];
-//         }
-//         return 0;
-//     }
-// }
-
+};

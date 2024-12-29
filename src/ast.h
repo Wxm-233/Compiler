@@ -40,6 +40,7 @@ public:
     // static void check_init_val_depth(std::unique_ptr<BaseAST>& init_val);
     static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<int>* result_vec);
     static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<void*>* result_vec);
+    static koopa_raw_value_data_t* build_binary(koopa_raw_binary_op op, koopa_raw_value_data_t* lhs, koopa_raw_value_data_t* rhs);
 };
 
 class CompUnitAST : public BaseAST

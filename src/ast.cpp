@@ -417,6 +417,32 @@ koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std:
     return build_aggregate(dim_vec, int_vec);
 }
 
+koopa_raw_value_data_t* BaseAST::build_binary(koopa_raw_binary_op op, koopa_raw_value_data_t* lhs, koopa_raw_value_data_t* rhs)
+{
+    auto binary = new koopa_raw_value_data_t({
+        .ty = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_INT32,
+        }),
+        .name = nullptr,
+        .used_by = {
+            .buffer = nullptr,
+            .len = 0,
+            .kind = KOOPA_RSIK_VALUE,
+        },
+        .kind = {
+            .tag = KOOPA_RVT_BINARY,
+            .data = {
+                .binary = {
+                    .op = op,
+                    .lhs = lhs,
+                    .rhs = rhs,
+                },
+            },
+        },
+    });
+    return binary;
+}
+
 void *CompUnitAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     auto raw_program = new koopa_raw_program_t;
@@ -958,37 +984,18 @@ void *UnaryExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             return build_number(val);
         }
 
-        auto unary = new koopa_raw_value_data_t({
-            .ty = new koopa_raw_type_kind_t({
-                .tag = KOOPA_RTT_INT32,
-            }),
-            .name = nullptr,
-            .used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            },
-            .kind = {
-                .tag = KOOPA_RVT_BINARY,
-                .data = {
-                    .binary = {
-                        .lhs = build_number(0, nullptr),
-                        .rhs = value,
-                    },
-                },
-            },
-        });
-
+        koopa_raw_binary_op op;
         switch (unaryop) {
         case '-':
-            unary->kind.data.binary.op = KOOPA_RBO_SUB;
+            op = KOOPA_RBO_SUB;
             break;
         case '!':
-            unary->kind.data.binary.op = KOOPA_RBO_EQ;
+            op = KOOPA_RBO_EQ;
             break;
         default:
             assert(false);
         }
+        auto unary = build_binary(op, build_number(0), value);
         current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({unary})));
         return unary;
     }
@@ -1066,41 +1073,22 @@ void *MulExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         return build_number(result);
     }
 
-    auto mul = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .lhs = left_value,
-                    .rhs = right_value,
-                },
-            },
-        },
-    });
-
+    koopa_raw_binary_op bop;
     switch (op)
     {
     case '*':
-        mul->kind.data.binary.op = KOOPA_RBO_MUL;
+        bop = KOOPA_RBO_MUL;
         break;
     case '/':
-        mul->kind.data.binary.op = KOOPA_RBO_DIV;
+        bop = KOOPA_RBO_DIV;
         break;
     case '%':
-        mul->kind.data.binary.op = KOOPA_RBO_MOD;
+        bop = KOOPA_RBO_MOD;
         break;
     default:
         assert(false);
     }
+    auto mul = build_binary(bop, left_value, right_value);
     current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({mul})));
     return mul;
 }
@@ -1128,35 +1116,15 @@ void *AddExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         
         return build_number(result);
     }
-
-    auto add = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .lhs = left_value,
-                    .rhs = right_value,
-                },
-            },
-        },
-    });
-
+    koopa_raw_binary_op bop;
     if (op == '+') {
-        add->kind.data.binary.op = KOOPA_RBO_ADD;
+        bop = KOOPA_RBO_ADD;
     } else if (op == '-') {
-        add->kind.data.binary.op = KOOPA_RBO_SUB;
+        bop = KOOPA_RBO_SUB;
     } else {
         assert(false);
     }
+    auto add = build_binary(bop, left_value, right_value);
     current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({add})));
     return add;
 }
@@ -1187,39 +1155,19 @@ void *RelExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
         return build_number(result);
     }
-
-    auto rel = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .lhs = left_value,
-                    .rhs = right_value,
-                },
-            },
-        },
-    });
-
+    koopa_raw_binary_op bop;
     if (op == "<") {
-        rel->kind.data.binary.op = KOOPA_RBO_LT;
+        bop = KOOPA_RBO_LT;
     } else if (op == ">") {
-        rel->kind.data.binary.op = KOOPA_RBO_GT;
+        bop = KOOPA_RBO_GT;
     } else if (op == "<=") {
-        rel->kind.data.binary.op = KOOPA_RBO_LE;
+        bop = KOOPA_RBO_LE;
     } else if (op == ">=") {
-        rel->kind.data.binary.op = KOOPA_RBO_GE;
+        bop = KOOPA_RBO_GE;
     } else {
         assert(false);
     }
+    auto rel = build_binary(bop, left_value, right_value);
     current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({rel})));
     return rel;
 }
@@ -1246,35 +1194,15 @@ void *EqExpAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
         return build_number(result);
     }
-
-    auto eq = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .lhs = left_value,
-                    .rhs = right_value,
-                },
-            },
-        },
-    });
-
+    koopa_raw_binary_op bop;
     if (op == "==") {
-        eq->kind.data.binary.op = KOOPA_RBO_EQ;
+        bop = KOOPA_RBO_EQ;
     } else if (op == "!=") {
-        eq->kind.data.binary.op = KOOPA_RBO_NOT_EQ;
+        bop = KOOPA_RBO_NOT_EQ;
     } else {
         assert(false);
     }
+    auto eq = build_binary(bop, left_value, right_value);
     current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({eq})));
     return eq;
 }
@@ -1322,27 +1250,7 @@ void *LAndExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             return build_number(result);
         }
         // rhs不能判断值，ne rhs, 0
-        auto ne = new koopa_raw_value_data_t({
-            .ty = new koopa_raw_type_kind_t({
-                .tag = KOOPA_RTT_INT32,
-            }),
-            .name = nullptr,
-            .used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            },
-            .kind = {
-                .tag = KOOPA_RVT_BINARY,
-                .data = {
-                    .binary = {
-                        .op = KOOPA_RBO_NOT_EQ,
-                        .lhs = right_value,
-                        .rhs = build_number(0),
-                    },
-                },
-            },
-        });
+        auto ne = build_binary(KOOPA_RBO_NOT_EQ, right_value, build_number(0));
         current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({ne})));
         return ne;
     }
@@ -1406,28 +1314,8 @@ void *LAndExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 
     auto right_value = (koopa_raw_value_data_t*)eq_exp->toRaw();
 
-    // ne  
-    auto ne = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .op = KOOPA_RBO_NOT_EQ,
-                    .lhs = right_value,
-                    .rhs = build_number(0),
-                },
-            },
-        },
-    });
+    // ne rhs, 0
+    auto ne = build_binary(KOOPA_RBO_NOT_EQ, right_value, build_number(0));
     // jmp
     auto jmp_args = new koopa_raw_slice_t({
         .buffer = new const void*[1],
@@ -1488,27 +1376,7 @@ void *LOrExpAST::toRaw(int n = 0, void* args[] = nullptr) const
             return build_number(result);
         }
         // rhs不能判断值，ne rhs, 0
-        auto ne = new koopa_raw_value_data_t({
-            .ty = new koopa_raw_type_kind_t({
-                .tag = KOOPA_RTT_INT32,
-            }),
-            .name = nullptr,
-            .used_by = {
-                .buffer = nullptr,
-                .len = 0,
-                .kind = KOOPA_RSIK_VALUE,
-            },
-            .kind = {
-                .tag = KOOPA_RVT_BINARY,
-                .data = {
-                    .binary = {
-                        .op = KOOPA_RBO_NOT_EQ,
-                        .lhs = right_value,
-                        .rhs = build_number(0),
-                    },
-                },
-            },
-        });
+        auto ne = build_binary(KOOPA_RBO_NOT_EQ, right_value, build_number(0));
         current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({ne})));
         return ne;
     }
@@ -1572,28 +1440,8 @@ void *LOrExpAST::toRaw(int n = 0, void* args[] = nullptr) const
 
     auto right_value = (koopa_raw_value_data_t*)land_exp->toRaw();
 
-    // ne
-    auto ne = new koopa_raw_value_data_t({
-        .ty = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_INT32,
-        }),
-        .name = nullptr,
-        .used_by = {
-            .buffer = nullptr,
-            .len = 0,
-            .kind = KOOPA_RSIK_VALUE,
-        },
-        .kind = {
-            .tag = KOOPA_RVT_BINARY,
-            .data = {
-                .binary = {
-                    .op = KOOPA_RBO_NOT_EQ,
-                    .lhs = right_value,
-                    .rhs = build_number(0),
-                },
-            },
-        },
-    });
+    // ne rhs, 0
+    auto ne = build_binary(KOOPA_RBO_NOT_EQ, right_value, build_number(0));
 
     // jmp
     auto jmp_args = new koopa_raw_slice_t({
@@ -1699,7 +1547,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
             },
         });
-        Symbol::insert(ident, Symbol::TYPE_CONST, global_alloc);
+        Symbol::insert(ident, Symbol::TYPE_ARRAY, global_alloc, dim_vec);
         global_values.push_back(global_alloc);
         return nullptr;
 
@@ -1739,7 +1587,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
             },
         });
-        Symbol::insert(ident, Symbol::TYPE_CONST, alloc);
+        Symbol::insert(ident, Symbol::TYPE_ARRAY, alloc, dim_vec);
         auto aggregate = build_aggregate(dim_vec, result_vec);
         auto store = build_store(aggregate, alloc);
         current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({alloc, store})));
@@ -1809,7 +1657,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
             });
             global_values.push_back(global_alloc);
-            Symbol::insert(ident, Symbol::TYPE_CONST, global_alloc);
+            Symbol::insert(ident, Symbol::TYPE_ARRAY, global_alloc, dim_vec);
             return nullptr;
         }
         else {
@@ -1848,7 +1696,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                     },
                 },
             });
-            Symbol::insert(ident, Symbol::TYPE_CONST, alloc);
+            Symbol::insert(ident, Symbol::TYPE_ARRAY, alloc, dim_vec);
             auto aggregate = build_aggregate(dim_vec, result_vec);
             auto raw_store = build_store(aggregate, alloc);
             current_bbs.push_back(build_block_from_insts(new std::vector<koopa_raw_value_data_t*>({alloc, raw_store})));
@@ -1966,10 +1814,42 @@ void *InitValAST::toRaw(int n = 0, void* args[] = nullptr) const
 
 void *LValAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
-    if (index_list != nullptr) { // IDENT[Exp]
-
-    }
     auto sym = Symbol::query(ident);
+    if (index_list != nullptr) { // IDENT[Exp][Exp]...
+        auto insts = new std::vector<koopa_raw_value_data_t*>();
+        auto temp_p = sym.allocator;
+        for (auto &i : *index_list) {
+            auto get_elem_ptr = new koopa_raw_value_data_t({
+                .ty = new koopa_raw_type_kind_t({
+                    .tag = KOOPA_RTT_POINTER,
+                    .data = {
+                        .pointer = {
+                            .base = temp_p->ty->data.pointer.base->data.array.base,
+                        },
+                    },
+                }),
+                .name = nullptr,
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_GET_ELEM_PTR,
+                    .data = {
+                        .get_elem_ptr = {
+                            .src = temp_p,
+                            .index = (koopa_raw_value_data_t*)i->toRaw(),
+                        },
+                    },
+                },
+            });
+            temp_p = get_elem_ptr;
+            insts->push_back(temp_p);
+        }
+        current_bbs.push_back(build_block_from_insts(insts));
+        return temp_p;
+    }
     if (sym.type == Symbol::TYPE_CONST) {
         return build_number(sym.int_value);
     }

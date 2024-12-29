@@ -3,6 +3,7 @@
 #include <string>
 #include <stack>
 #include <memory>
+#include <vector>
 #include <koopa.h>
 
 namespace Symbol {
@@ -10,7 +11,8 @@ namespace Symbol {
     {
         TYPE_CONST,
         TYPE_VAR,
-        TYPE_FUNCTION
+        TYPE_FUNCTION,
+        TYPE_ARRAY,
     };
 
     struct symbol_val {
@@ -18,11 +20,13 @@ namespace Symbol {
         int int_value;
         koopa_raw_value_data_t* allocator;
         koopa_raw_function_data_t* function;
+        std::vector<int>* dim_vec;
     };
 
     void insert(const std::string &ident, Type type, int int_value);
     void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator);
     void insert(const std::string &ident, Type type, koopa_raw_function_data_t* function);
+    void insert(const std::string &ident, Type type, koopa_raw_value_data_t* allocator, std::vector<int>* dim_vec);
     symbol_val query(const std::string &ident);
     void enter_scope();
     void leave_scope();
