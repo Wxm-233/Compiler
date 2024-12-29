@@ -1881,6 +1881,8 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
 
 void *ConstInitValAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
+    // n = 0 if toRaw() is called by ConstDefAST::toRaw()
+    // else n = 1
     auto dim_vec = (std::vector<int>*)args[0];
     auto result_vec = (std::vector<int>*)args[1];
     if (!is_list) {
@@ -1895,9 +1897,13 @@ void *ConstInitValAST::toRaw(int n = 0, void* args[] = nullptr) const
             alignment *= i;
         }
         for (auto& i : *const_init_val_list) {
-            i->toRaw(n, new void*[2]{dim_vec, result_vec});
+            i->toRaw(1, new void*[2]{dim_vec, result_vec});
         }
-        for (; (result_vec->size() % alignment) || (!result_vec->size()) ; result_vec->push_back(0));
+        if (result_vec->size() == 0) {
+            if (n == 1)
+                alignment = dim_vec->front();
+        }
+        for (; (result_vec->size() % alignment) || (result_vec->size() == 0) ; result_vec->push_back(0));
     }
     return result_vec;
 }
@@ -1906,7 +1912,7 @@ void *InitValAST::toRaw(int n = 0, void* args[] = nullptr) const
 {
     auto dim_vec = (std::vector<int>*)args[0];
     auto result_vec = (std::vector<void*>*)args[1];
-    // void* -> std::vector<koopa_raw_basic_block_data_t*>*
+    // void* -> koopa_raw_value_data_t*
     if (!is_list) {
         result_vec->push_back(exp->toRaw());
     } else {
@@ -1919,7 +1925,11 @@ void *InitValAST::toRaw(int n = 0, void* args[] = nullptr) const
             alignment *= i;
         }
         for (auto& i : *init_val_list) {
-            i->toRaw(n, new void*[2]{dim_vec, result_vec});
+            i->toRaw(1, new void*[2]{dim_vec, result_vec});
+        }
+        if (result_vec->size() == 0) {
+            if (n == 1)
+                alignment = dim_vec->front();
         }
         for (; result_vec->size() % alignment || (!result_vec->size()); result_vec->push_back(build_number(0)));}
     return result_vec;
