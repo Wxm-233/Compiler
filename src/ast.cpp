@@ -1614,7 +1614,7 @@ void *ConstDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             dim_vec->push_back((long)(*i)->toRaw());
         }
     auto result_vec = new std::vector<int>();
-    const_init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
+    const_init_val->toRaw(0, new void*[2]{dim_vec, result_vec});
     if (dim_list == nullptr) {
         int val = result_vec->front();
         Symbol::insert(ident, Symbol::TYPE_CONST, val);
@@ -1717,7 +1717,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
     auto result_vec = new std::vector<void*>();
     if (has_init_val)
-        init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
+        init_val->toRaw(0, new void*[2]{dim_vec, result_vec});
     if (dim_list != nullptr) {
         if (!has_init_val) {
             int len = 1;
