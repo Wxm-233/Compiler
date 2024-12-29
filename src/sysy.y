@@ -129,6 +129,22 @@ FuncFParam
     auto ast = new FuncFParamAST();
     ast->type = *unique_ptr<string>($1);
     ast->ident = *unique_ptr<string>($2);
+    ast->is_array = false;
+    $$ = ast;
+  }
+  | Type IDENT '[' ']' {
+    auto ast = new FuncFParamAST();
+    ast->type = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    ast->is_array = true;
+    $$ = ast;
+  }
+  | Type IDENT '[' ']' DimList {
+    auto ast = new FuncFParamAST();
+    ast->type = *unique_ptr<string>($1);
+    ast->ident = *unique_ptr<string>($2);
+    ast->is_array = true;
+    ast->dim_list = $5;
     $$ = ast;
   }
 

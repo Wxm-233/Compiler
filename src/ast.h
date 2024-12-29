@@ -80,6 +80,8 @@ class FuncFParamAST : public BaseAST
 public:
     std::string type;
     std::string ident;
+    bool is_array;
+    std::vector<std::unique_ptr<BaseAST>>* dim_list;
 
     void* toRaw(int n, void* args[]) const override;
 };

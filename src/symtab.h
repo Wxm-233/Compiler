@@ -13,6 +13,7 @@ namespace Symbol {
         TYPE_VAR,
         TYPE_FUNCTION,
         TYPE_ARRAY,
+        TYPE_POINTER,
     };
 
     struct symbol_val {
