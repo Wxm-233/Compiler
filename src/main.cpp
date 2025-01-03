@@ -69,12 +69,17 @@ int main(int argc, const char *argv[])
 	}
 	else if (std::string(mode) == "-riscv" || std::string(mode) == "-perf")
 	{
-		unsigned long length;
-		koopa_dump_to_string(program, nullptr, &length);
-		char* buffer = new char[length+1];
-		koopa_dump_to_string(program, buffer, &length); // dump到字符串
-		buffer[length] = '\0';
+		// size_t length = 5000000;
+		// koopa_dump_to_string(program, nullptr, &length);
+		// char* buffer = new char[length+1];
+		// koopa_dump_to_string(program, buffer, &length+1); // dump到字符串
+		// buffer[length] = '\0';
 		// std::clog << buffer << std::endl;
+
+		unsigned long length = 5000000;
+		char buffer[length];
+		koopa_dump_to_string(program, buffer, &length); // dump到字符串
+
 		koopa_program_t program_new;
 		koopa_error_code_t ret = koopa_parse_from_string(buffer, &program_new);
 		assert(ret == KOOPA_EC_SUCCESS); //确保解析正确

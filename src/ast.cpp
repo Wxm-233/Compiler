@@ -4,7 +4,6 @@
 std::vector<koopa_raw_basic_block_data_t*> current_bbs;
 std::vector<koopa_raw_value_data_t*> current_values;
 std::vector<koopa_raw_value_data_t*> global_values;
-int array_current_pos;
 
 koopa_raw_type_kind_t* BaseAST::build_type_from_dim_vec(std::vector<int>* dim_vec)
 {
@@ -337,6 +336,27 @@ koopa_raw_function_data_t* BaseAST::build_function(
 
 koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std::vector<int>* result_vec)
 {
+    bool all_zero = true;
+    for (auto i : *result_vec) {
+        if (i != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    if (all_zero) {
+        return new koopa_raw_value_data_t({
+            .ty = build_type_from_dim_vec(dim_vec),
+            .name = nullptr,
+            .used_by = {
+                .buffer = nullptr,
+                .len = 0,
+                .kind = KOOPA_RSIK_VALUE,
+            },
+            .kind = {
+                .tag = KOOPA_RVT_ZERO_INIT,
+            },
+        });
+    }
     int dim = dim_vec->back();
     if (dim_vec->size() == 1) {
         auto raw_aggregate = new koopa_raw_value_data_t({
@@ -376,7 +396,7 @@ koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std:
         return raw_aggregate;
     }
     auto raw_aggregate = new koopa_raw_value_data_t({
-        .ty = nullptr,
+        .ty = build_type_from_dim_vec(dim_vec),
         .name = nullptr,
         .used_by = {
             .buffer = nullptr,
@@ -396,23 +416,6 @@ koopa_raw_value_data_t* BaseAST::build_aggregate(std::vector<int>* dim_vec, std:
             },
         },
     });
-    auto ty_integer = new koopa_raw_type_kind_t({
-        .tag = KOOPA_RTT_INT32,
-    });
-    koopa_raw_type_kind_t* temp_ty = ty_integer;
-    for (auto i : *dim_vec) {
-        auto ty_array = new koopa_raw_type_kind_t({
-            .tag = KOOPA_RTT_ARRAY,
-            .data = {
-                .array = {
-                    .base = temp_ty,
-                    .len = (unsigned long)i,
-                },
-            },
-        });
-        temp_ty = ty_array;
-    }
-    raw_aggregate->ty = temp_ty;
     auto sub_dim_vec = new std::vector<int>(dim_vec->begin(), dim_vec->end() - 1);
     int sub_len = 1;
     for (auto i : *sub_dim_vec) {
@@ -1839,16 +1842,22 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
     if (has_init_val)
         init_val->toRaw(n, new void*[2]{dim_vec, result_vec});
     if (dim_list != nullptr) { // 是数组
-        if (!has_init_val) {
-            int len = 1;
-            for (auto i : *dim_vec) {
-                len *= i;
-            }
-            for (int i = 0; i < len; i++) {
-                result_vec->push_back(build_number(0));
-            }
-        }
         if (n == 1) { // global def
+            koopa_raw_value_data_t* value;
+            if (has_init_val)
+                value = build_aggregate(dim_vec, result_vec);
+            else value = new koopa_raw_value_data_t({
+                .ty = build_type_from_dim_vec(dim_vec),
+                .name = nullptr,
+                .used_by = {
+                    .buffer = nullptr,
+                    .len = 0,
+                    .kind = KOOPA_RSIK_VALUE,
+                },
+                .kind = {
+                    .tag = KOOPA_RVT_ZERO_INIT,
+                },
+            });
             auto global_alloc = new koopa_raw_value_data_t({
                 .name = build_ident(ident, '@'),
                 .used_by = {
@@ -1860,7 +1869,7 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                     .tag = KOOPA_RVT_GLOBAL_ALLOC,
                     .data = {
                         .global_alloc = {
-                            .init = build_aggregate(dim_vec, result_vec),
+                            .init = value,
                         }
                     }
                 }
@@ -1894,12 +1903,21 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
             return nullptr;
         }
         else { // local array
+            if (!has_init_val) {
+                int len = 1;
+                for (auto i : *dim_vec) {
+                    len *= i;
+                }
+                for (int i = 0; i < len; i++) {
+                    result_vec->push_back(build_number(0));
+                }
+            }
             auto alloc = new koopa_raw_value_data_t({
                 .ty = new koopa_raw_type_kind_t({
                     .tag = KOOPA_RTT_POINTER,
                     .data = {
                         .pointer = {
-                            .base = kind,
+                            .base = build_type_from_dim_vec(dim_vec),
                         },
                     },
                 }),

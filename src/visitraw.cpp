@@ -512,9 +512,8 @@ void Visit(const koopa_raw_global_alloc_t &global_alloc)
         case KOOPA_RVT_INTEGER:
             std::cout << "  .word " << global_alloc.init->kind.data.integer.value << std::endl;
             break;
-        // 实际上，zero_init存在复杂的类型，但由于koopa中不会生成复杂类型的zero_init，所以这里只需处理为int32即可
         case KOOPA_RVT_ZERO_INIT:
-            std::cout << "  .zero 4" << std::endl;
+            std::cout << "  .zero " << 4*array_len(global_alloc.init->ty) << std::endl;
             break;
         case KOOPA_RVT_AGGREGATE:
             Visit(global_alloc.init->kind.data.aggregate);
@@ -610,7 +609,7 @@ void Visit(const koopa_raw_aggregate_t &aggregate)
                 std::cout << "  .word " << value->kind.data.integer.value << std::endl;
                 break;
             case KOOPA_RVT_ZERO_INIT:
-                std::cout << "  .zero 4" << std::endl;
+                std::cout << "  .zero " << 4*array_len(value->ty) << std::endl;
                 break;
             case KOOPA_RVT_AGGREGATE:
                 Visit(value->kind.data.aggregate);
