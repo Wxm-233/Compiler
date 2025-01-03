@@ -69,7 +69,7 @@ int main(int argc, const char *argv[])
 	}
 	else if (std::string(mode) == "-riscv")
 	{
-		unsigned long length = 500000;
+		unsigned long length = 5000000;
 		char buffer[length];
 		koopa_dump_to_string(program, buffer, &length); // dump到字符串
 		// std::clog << buffer << std::endl;
