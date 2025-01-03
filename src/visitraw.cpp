@@ -29,6 +29,19 @@ void sw_safe(std::string reg, int loc) {
     }
 }
 
+int array_len(const koopa_raw_type_kind* t) {
+    switch (t->tag) {
+        case KOOPA_RTT_INT32:
+            return 1;
+        case KOOPA_RTT_ARRAY:
+            return t->data.array.len * array_len(t->data.array.base);
+        case KOOPA_RTT_POINTER:
+            return 1;
+        default:
+            assert(false);
+    }
+}
+
 namespace Stack {
     int R;
     static std::map<koopa_raw_value_t, int> loc_map;
@@ -57,18 +70,10 @@ namespace Stack {
                 break;
             case KOOPA_RVT_GLOBAL_ALLOC:
                 std::cout << "  la " << reg << ", " << value->name + 1 << std::endl;
-                std::cout << "  lw " << reg << ", 0(" << reg << ")" << std::endl;
                 break;
             default:
                 lw_safe(reg, Query(value));
         }
-    }
-    void StoreFromreg(koopa_raw_value_t value, std::string reg, std::string reg2) {
-        if (value->kind.tag == KOOPA_RVT_GLOBAL_ALLOC) {
-            std::cout << "  la " << reg2 << ", " << value->name + 1 << std::endl;
-            std::cout << "  sw " << reg << ", 0(" << reg2 << ")" << std::endl;
-        }
-        else sw_safe(reg, Query(value));
     }
 }
 
@@ -163,6 +168,7 @@ void Visit(const koopa_raw_function_t &func)
     int insts_on_stack = 0;
     bool has_call = false;
     int extra_args_in_call = 0;
+    int total_alloc_len = 0;
     // 遍历基本块
     for (size_t i = 0; i < func->bbs.len; ++i)
     {
@@ -175,10 +181,16 @@ void Visit(const koopa_raw_function_t &func)
             case KOOPA_RVT_CALL:
                 has_call = true;
                 extra_args_in_call = std::max(extra_args_in_call, (int)inst->kind.data.call.args.len - 8);
-                // break;
+                insts_on_stack += 1;
+                break;
             case KOOPA_RVT_ALLOC:
+                insts_on_stack += 1;
+                total_alloc_len += array_len(inst->ty->data.pointer.base);
+                break;
             case KOOPA_RVT_BINARY:
             case KOOPA_RVT_LOAD:
+            case KOOPA_RVT_GET_PTR:
+            case KOOPA_RVT_GET_ELEM_PTR:
                 insts_on_stack += 1;
                 break;
             default:
@@ -189,7 +201,8 @@ void Visit(const koopa_raw_function_t &func)
     int S = insts_on_stack * 4;
     Stack::R = has_call ? 4 : 0;
     int A = extra_args_in_call * 4;
-    Stack::stack_frame_length = (S + Stack::R + A + 15) / 16 * 16;
+    int L = total_alloc_len * 4;
+    Stack::stack_frame_length = (S + Stack::R + A + L + 15) / 16 * 16;
 
     Stack::loc_map = std::map<koopa_raw_value_t, int>();
 
@@ -244,6 +257,14 @@ void Visit(const koopa_raw_value_t &value)
         // 访问 alloc 指令
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
+        if (Stack::current_loc < 2048) {
+            std::cout << "  addi t0, sp, " << Stack::current_loc << std::endl;
+        } else {
+            std::cout << "  li t0, " << Stack::current_loc << std::endl;
+            std::cout << "  add t0, t0, sp" << std::endl;
+        }
+        sw_safe("t0", Stack::current_loc-4);
+        Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
         break;
     case KOOPA_RVT_GLOBAL_ALLOC:
         // 访问 global_alloc 指令
@@ -279,6 +300,16 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_CALL:
         // 访问 call 指令
         Visit(kind.data.call);
+        Stack::Insert(value, Stack::current_loc);
+        Stack::current_loc += 4;
+        break;
+    case KOOPA_RVT_GET_ELEM_PTR:
+        Visit(kind.data.get_elem_ptr);
+        Stack::Insert(value, Stack::current_loc);
+        Stack::current_loc += 4;
+        break;
+    case KOOPA_RVT_GET_PTR:
+        Visit(kind.data.get_ptr);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
         break;
@@ -456,13 +487,15 @@ void Visit(const koopa_raw_binary_t &binary)
 void Visit(const koopa_raw_store_t &store)
 {
     Stack::Load2reg(store.value, "t0");
-    Stack::StoreFromreg(store.dest, "t0", "t1");
+    Stack::Load2reg(store.dest, "t1");
+    std::cout << "  sw t0, 0(t1)" << std::endl;
 }
 
 // 访问 load 指令
 void Visit(const koopa_raw_load_t &load)
 {
     Stack::Load2reg(load.src, "t0");
+    std::cout << "  lw t0, 0(t0)" << std::endl;
     sw_safe("t0", Stack::current_loc);
 }
 
@@ -479,8 +512,12 @@ void Visit(const koopa_raw_global_alloc_t &global_alloc)
         case KOOPA_RVT_INTEGER:
             std::cout << "  .word " << global_alloc.init->kind.data.integer.value << std::endl;
             break;
+        // 实际上，zero_init存在复杂的类型，但由于koopa中不会生成复杂类型的zero_init，所以这里只需处理为int32即可
         case KOOPA_RVT_ZERO_INIT:
             std::cout << "  .zero 4" << std::endl;
+            break;
+        case KOOPA_RVT_AGGREGATE:
+            Visit(global_alloc.init->kind.data.aggregate);
             break;
         default:
             assert(false);
@@ -525,23 +562,59 @@ void Visit(const koopa_raw_call_t &call)
 {
     for (int i = 0; i < call.args.len; i++) {
         auto arg = (koopa_raw_value_t)call.args.buffer[i];
-        if (arg->kind.tag == KOOPA_RVT_INTEGER) {
-            if (i < 8) {
-                std::cout << "  li a" << i << ", " << arg->kind.data.integer.value << std::endl;
-            } else {
-                std::cout << "  li t0, " << arg->kind.data.integer.value << std::endl;
-                std::cout << "  sw t0, " << 4 * (i - 8) << "(sp)" << std::endl;
-            }
+        if (i < 8) {
+            Stack::Load2reg(arg, "a" + std::to_string(i));
         } else {
-            if (i < 8) {
-                lw_safe("a" + std::to_string(i), Stack::Query(arg));
-            } else {
-                lw_safe("t0", Stack::Query(arg));
-                std::cout << "  sw t0, " << 4 * (i - 8) << "(sp)" << std::endl;
-            }
+            Stack::Load2reg(arg, "t0");
+            sw_safe("t0", 4*(i-8));
         }
     }
     std::cout << "  call " << call.callee->name + 1 << std::endl;
 
     sw_safe("a0", Stack::current_loc);
+}
+
+// 访问get_elem_ptr指令
+void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr)
+{
+    Stack::Load2reg(get_elem_ptr.src, "t0");
+    Stack::Load2reg(get_elem_ptr.index, "t1");
+    int multipler = 4 * array_len(get_elem_ptr.src->ty->data.pointer.base->data.array.base);
+    std::cout << "  li t2, " << multipler << std::endl;
+    std::cout << "  mul t1, t1, t2" << std::endl;
+    std::cout << "  add t0, t0, t1" << std::endl;
+    sw_safe("t0", Stack::current_loc);
+}
+
+// 访问get_ptr指令
+void Visit(const koopa_raw_get_ptr_t &get_ptr)
+{
+    Stack::Load2reg(get_ptr.src, "t0");
+    Stack::Load2reg(get_ptr.index, "t1");
+    int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base);
+    std::cout << "  li t2, " << multipler << std::endl;
+    std::cout << "  mul t1, t1, t2" << std::endl;
+    std::cout << "  add t0, t0, t1" << std::endl;
+    sw_safe("t0", Stack::current_loc);
+}
+
+// 访问aggregate指令
+void Visit(const koopa_raw_aggregate_t &aggregate)
+{
+    for (int i = 0; i < aggregate.elems.len; i++) {
+        auto value = (koopa_raw_value_t)aggregate.elems.buffer[i];
+        switch (value->kind.tag) {
+            case KOOPA_RVT_INTEGER:
+                std::cout << "  .word " << value->kind.data.integer.value << std::endl;
+                break;
+            case KOOPA_RVT_ZERO_INIT:
+                std::cout << "  .zero 4" << std::endl;
+                break;
+            case KOOPA_RVT_AGGREGATE:
+                Visit(value->kind.data.aggregate);
+                break;
+            default:
+                assert(false);
+        }
+    }
 }

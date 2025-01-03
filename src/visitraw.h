@@ -46,3 +46,9 @@ void Visit(const koopa_raw_branch_t &branch);
 void Visit(const koopa_raw_jump_t &jump);
 
 void Visit(const koopa_raw_call_t &call);
+
+void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr);
+
+void Visit(const koopa_raw_get_ptr_t &get_ptr);
+
+void Visit(const koopa_raw_aggregate_t &aggregate);
