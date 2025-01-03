@@ -67,7 +67,7 @@ int main(int argc, const char *argv[])
 		koopa_error_code_t ret = koopa_dump_llvm_to_stdout(program);
 		assert(ret == KOOPA_EC_SUCCESS);
 	}
-	else if (std::string(mode) == "-riscv")
+	else if (std::string(mode) == "-riscv" || std::string(mode) == "-perf")
 	{
 		unsigned long length = 5000000;
 		char buffer[length];
