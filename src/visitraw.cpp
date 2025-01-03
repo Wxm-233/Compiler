@@ -13,9 +13,9 @@ void lw_safe(std::string reg, int loc) {
     if (loc < 2048) {
         std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
     } else {
-        std::cout << "  li a0, " << loc << std::endl;
-        std::cout << "  add a0, sp, a0" << std::endl;
-        std::cout << "  lw " << reg << ", 0(a0)" << std::endl;
+        std::cout << "  li t3, " << loc << std::endl;
+        std::cout << "  add t3, t3, sp" << std::endl;
+        std::cout << "  lw " << reg << ", 0(t3)" << std::endl;
     }
 }
 
@@ -23,9 +23,9 @@ void sw_safe(std::string reg, int loc) {
     if (loc < 2048) {
         std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
     } else {
-        std::cout << "  li a0, " << loc << std::endl;
-        std::cout << "  add a0, sp, a0" << std::endl;
-        std::cout << "  sw " << reg << ", 0(a0)" << std::endl;
+        std::cout << "  li t3, " << loc << std::endl;
+        std::cout << "  add t3, t3, sp" << std::endl;
+        std::cout << "  sw " << reg << ", 0(t3)" << std::endl;
     }
 }
 
