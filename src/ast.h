@@ -43,8 +43,12 @@ public:
     static koopa_raw_function_data_t* build_function(const char* name, std::vector<std::string> params, std::string ret_ty);
     // static void check_init_val_depth(std::unique_ptr<BaseAST>& init_val);
     static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<int>* result_vec);
-    static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<void*>* result_vec);
+    static koopa_raw_value_data_t* build_aggregate(std::vector<int>* dim_vec, std::vector<koopa_raw_value_data_t*>* result_vec);
     static koopa_raw_value_data_t* build_binary(koopa_raw_binary_op op, koopa_raw_value_data_t* lhs, koopa_raw_value_data_t* rhs);
+    static koopa_raw_value_data_t* build_get_ptr(koopa_raw_value_data_t* src, koopa_raw_value_data_t* index);
+    static koopa_raw_value_data_t* build_get_elem_ptr(koopa_raw_value_data_t* src, koopa_raw_value_data_t* index);
+    static void store2array(koopa_raw_value_data_t* src, std::vector<koopa_raw_value_data*>* values, std::vector<int>* dims);
+    static void store2array(koopa_raw_value_data_t* src, std::vector<int>* values, std::vector<int>* dims);
 };
 
 class CompUnitAST : public BaseAST
