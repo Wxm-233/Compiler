@@ -29,6 +29,7 @@ public:
     virtual ~BaseAST() = default;
 
     virtual void* toRaw(int n = 0, void* args[] = nullptr) const = 0;
+    static koopa_raw_type_kind_t* build_type_from_dim_vec(std::vector<int>* dim_vec);
     static koopa_raw_value_data_t* build_number(int number, koopa_raw_value_data_t* user);
     static char* build_ident(const std::string& ident, char c);
     // static void set_used_by(koopa_raw_value_data_t* value, koopa_raw_value_data_t* user);

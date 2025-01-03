@@ -4,6 +4,28 @@
 std::vector<koopa_raw_basic_block_data_t*> current_bbs;
 std::vector<koopa_raw_value_data_t*> current_values;
 std::vector<koopa_raw_value_data_t*> global_values;
+int array_current_pos;
+
+koopa_raw_type_kind_t* BaseAST::build_type_from_dim_vec(std::vector<int>* dim_vec)
+{
+    auto ty_integer = new koopa_raw_type_kind_t({
+        .tag = KOOPA_RTT_INT32,
+    });
+    koopa_raw_type_kind_t* temp_ty = ty_integer;
+    for (auto i : *dim_vec) {
+        auto ty_array = new koopa_raw_type_kind_t({
+            .tag = KOOPA_RTT_ARRAY,
+            .data = {
+                .array = {
+                    .base = temp_ty,
+                    .len = (unsigned long)i,
+                },
+            },
+        });
+        temp_ty = ty_array;
+    }
+    return temp_ty;
+}
 
 koopa_raw_value_data_t* BaseAST::build_number(int number, koopa_raw_value_data_t* user=nullptr)
 {
@@ -1873,6 +1895,14 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
         }
         else { // local array
             auto alloc = new koopa_raw_value_data_t({
+                .ty = new koopa_raw_type_kind_t({
+                    .tag = KOOPA_RTT_POINTER,
+                    .data = {
+                        .pointer = {
+                            .base = kind,
+                        },
+                    },
+                }),
                 .name = build_ident(ident, '@'),
                 .used_by = {
                     .buffer = nullptr,
@@ -1881,30 +1911,6 @@ void *VarDefAST::toRaw(int n = 0, void* args[] = nullptr) const
                 },
                 .kind = {
                     .tag = KOOPA_RVT_ALLOC,
-                },
-            });
-            auto ty_integer = new koopa_raw_type_kind_t({
-                .tag = KOOPA_RTT_INT32,
-            });
-            koopa_raw_type_kind_t* temp_ty = ty_integer;
-            for (auto i : *dim_vec) {
-                auto ty_array = new koopa_raw_type_kind_t({
-                    .tag = KOOPA_RTT_ARRAY,
-                    .data = {
-                        .array = {
-                            .base = temp_ty,
-                            .len = (unsigned long)i,
-                        },
-                    },
-                });
-                temp_ty = ty_array;
-            }
-            alloc->ty = new koopa_raw_type_kind_t({
-                .tag = KOOPA_RTT_POINTER,
-                .data = {
-                    .pointer = {
-                        .base = temp_ty,
-                    },
                 },
             });
             Symbol::insert(ident, Symbol::TYPE_ARRAY, alloc, dim_vec);
