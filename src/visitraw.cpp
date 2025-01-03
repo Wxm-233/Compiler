@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cassert>
 #include <string>
+#include <cmath>
 #include <cstring>
 #include <map>
 // 函数声明略
@@ -71,42 +72,22 @@ namespace Stack {
             case KOOPA_RVT_GLOBAL_ALLOC:
                 std::cout << "  la " << reg << ", " << value->name + 1 << std::endl;
                 break;
+            case KOOPA_RVT_ALLOC:
+            {
+                int pos = Query(value);
+                if (pos < 2048) {
+                    std::cout << "  addi " << reg << ", sp, " << pos << std::endl;
+                } else {
+                    std::cout << "  li " << reg << ", " << pos << std::endl;
+                    std::cout << "  add " << reg << ", " << reg << ", sp" << std::endl;
+                }
+                break;
+            }
             default:
                 lw_safe(reg, Query(value));
         }
     }
 }
-
-// int use_inst(koopa_raw_value_t inst)
-// {
-//     // std::clog << "inst: " << inst->kind.tag << std::endl;
-//     for (int i = 0; i < 8; i++) {
-//         if (regs[i].data == inst) {
-//             regs[i].n_used_by -= 1;
-//             if (regs[i].n_used_by == 0) {
-//                 regs[i].data = nullptr;
-//             }
-//             return i;
-//         }
-//     }
-//     assert(false);
-// }
-
-// int alloc_reg(const koopa_raw_value_t &value)
-// {
-//     int pos = 0;
-//     if (value->used_by.len > 0) {
-//         for (pos = 0; pos < 8; pos++) {
-//             if (regs[pos].n_used_by == 0) {
-//                 regs[pos].data = value;
-//                 regs[pos].n_used_by = value->used_by.len;
-//                 break;
-//             }
-//         }
-//     }
-//     return pos;
-// }
-
 
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
@@ -184,7 +165,6 @@ void Visit(const koopa_raw_function_t &func)
                 insts_on_stack += 1;
                 break;
             case KOOPA_RVT_ALLOC:
-                insts_on_stack += 1;
                 total_alloc_len += array_len(inst->ty->data.pointer.base);
                 break;
             case KOOPA_RVT_BINARY:
@@ -248,22 +228,9 @@ void Visit(const koopa_raw_value_t &value)
         // 访问 return 指令
         Visit(kind.data.ret);
         break;
-    case KOOPA_RVT_INTEGER:
-        // 访问 integer 指令
-        // std::clog << "integer: " << kind.data.integer.value << std::endl;
-        // Visit(kind.data.integer, value);
-        break;
     case KOOPA_RVT_ALLOC:
         // 访问 alloc 指令
         Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
-        if (Stack::current_loc < 2048) {
-            std::cout << "  addi t0, sp, " << Stack::current_loc << std::endl;
-        } else {
-            std::cout << "  li t0, " << Stack::current_loc << std::endl;
-            std::cout << "  add t0, t0, sp" << std::endl;
-        }
-        sw_safe("t0", Stack::current_loc-4);
         Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
         break;
     case KOOPA_RVT_GLOBAL_ALLOC:
@@ -274,7 +241,6 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
-        // std::clog << "binary: " << kind.data.binary.op << std::endl;
         Visit(kind.data.binary);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
@@ -343,22 +309,11 @@ void Visit(const koopa_raw_return_t &ret)
     std::cout << "  ret" << std::endl;
 }
 
-// 实际上用不到了
-// void Visit(const koopa_raw_integer_t &integer, const koopa_raw_value_t value)
-// {
-//     // int pos = alloc_reg(value);
-//     // std::cout << "  li a" << pos << ", " << integer.value << std::endl;
-//     std::cout << "  li t0 " << integer.value << std::endl;
-// }
-
 // 访问二元运算指令
 void Visit(const koopa_raw_binary_t &binary)
 {
     Stack::Load2reg(binary.lhs, "t0");
     Stack::Load2reg(binary.rhs, "t1");
-    // int left_pos = use_inst(binary.lhs);
-    // int right_pos = use_inst(binary.rhs);
-    // int pos = alloc_reg(value);
 
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
@@ -420,67 +375,6 @@ void Visit(const koopa_raw_binary_t &binary)
             assert(false);
     }
     sw_safe("t0", Stack::current_loc);
-
-    // 以下是弃用的代码
-    // switch (binary.op) {
-    //     case KOOPA_RBO_NOT_EQ:
-    //         std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         std::cout << "  snez a" << pos << ", a" << pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_EQ:
-    //         std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_GT:
-    //         std::cout << "  sgt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_LT:
-    //         std::cout << "  slt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_GE:
-    //         std::cout << "  slt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_LE:
-    //         std::cout << "  sgt a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         std::cout << "  seqz a" << pos << ", a" << pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_ADD:
-    //         std::cout << "  add a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_SUB:
-    //         std::cout << "  sub a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_MUL:
-    //         std::cout << "  mul a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_DIV:
-    //         std::cout << "  div a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_MOD:
-    //         std::cout << "  rem a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_AND:
-    //         std::cout << "  and a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_OR:
-    //         std::cout << "  or a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_XOR:
-    //         std::cout << "  xor a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_SHL:
-    //         std::cout << "  sll a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_SHR:
-    //         std::cout << "  srl a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     case KOOPA_RBO_SAR:
-    //         std::cout << "  sra a" << pos << ", a" << left_pos << ", a" << right_pos << std::endl;
-    //         break;
-    //     default:
-    //         assert(false);
-    // }
 }
 
 // 访问 store 指令
@@ -498,12 +392,6 @@ void Visit(const koopa_raw_load_t &load)
     std::cout << "  lw t0, 0(t0)" << std::endl;
     sw_safe("t0", Stack::current_loc);
 }
-
-// 访问alloc指令
-// void Visit_alloc(koopa_raw_value_t value)
-// {
-
-// }
 
 // 访问global_alloc指令
 void Visit(const koopa_raw_global_alloc_t &global_alloc)
@@ -581,8 +469,13 @@ void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr)
     Stack::Load2reg(get_elem_ptr.src, "t0");
     Stack::Load2reg(get_elem_ptr.index, "t1");
     int multipler = 4 * array_len(get_elem_ptr.src->ty->data.pointer.base->data.array.base);
-    std::cout << "  li t2, " << multipler << std::endl;
-    std::cout << "  mul t1, t1, t2" << std::endl;
+    if ((multipler & (multipler - 1)) == 0) { // 是2的整数次幂
+        int digits = log2(multipler);
+        std::cout << "  slli t1, t1, " << digits << std::endl;
+    } else {
+        std::cout << "  li t2, " << multipler << std::endl;
+        std::cout << "  mul t1, t1, t2" << std::endl;
+    }
     std::cout << "  add t0, t0, t1" << std::endl;
     sw_safe("t0", Stack::current_loc);
 }
@@ -592,9 +485,14 @@ void Visit(const koopa_raw_get_ptr_t &get_ptr)
 {
     Stack::Load2reg(get_ptr.src, "t0");
     Stack::Load2reg(get_ptr.index, "t1");
-    int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base);
-    std::cout << "  li t2, " << multipler << std::endl;
-    std::cout << "  mul t1, t1, t2" << std::endl;
+    int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base->data.array.base);
+    if ((multipler & (multipler - 1)) == 0) { // 是2的整数次幂
+        int digits = log2(multipler);
+        std::cout << "  slli t1, t1, " << digits << std::endl;
+    } else {
+        std::cout << "  li t2, " << multipler << std::endl;
+        std::cout << "  mul t1, t1, t2" << std::endl;
+    }
     std::cout << "  add t0, t0, t1" << std::endl;
     sw_safe("t0", Stack::current_loc);
 }

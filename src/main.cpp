@@ -69,7 +69,7 @@ int main(int argc, const char *argv[])
 	}
 	else if (std::string(mode) == "-riscv" || std::string(mode) == "-perf")
 	{
-		// size_t length = 5000000;
+		// size_t length;
 		// koopa_dump_to_string(program, nullptr, &length);
 		// char* buffer = new char[length+1];
 		// koopa_dump_to_string(program, buffer, &length+1); // dump到字符串
