@@ -485,7 +485,7 @@ void Visit(const koopa_raw_get_ptr_t &get_ptr)
 {
     Stack::Load2reg(get_ptr.src, "t0");
     Stack::Load2reg(get_ptr.index, "t1");
-    int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base->data.array.base);
+    int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base);
     if ((multipler & (multipler - 1)) == 0) { // 是2的整数次幂
         int digits = log2(multipler);
         std::cout << "  slli t1, t1, " << digits << std::endl;
