@@ -18,6 +18,10 @@ class ExpAST;
 class PrimaryExpAST;
 class UnaryExpAST;
 
+void append_value(koopa_raw_value_data_t* value);
+void end_block();
+void append_bb(koopa_raw_basic_block_data_t* bb);
+
 // 所有 AST 的基类
 class BaseAST
 {
