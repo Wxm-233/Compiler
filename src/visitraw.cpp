@@ -543,8 +543,10 @@ void Visit(const koopa_raw_branch_t &branch)
             assert(((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.tag == KOOPA_RVT_INTEGER);
             std::cout << "  li a" << i << ", " << ((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.data.integer.value << std::endl;
         }
-        std::cout << "  bnez t0, " << branch.true_bb->name + 1 << std::endl;
+        std::cout << "  bnez t0, j2" << branch.true_bb->name + 1 << std::endl;
         std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
+        std::cout << "j2" << branch.true_bb->name + 1 << ":" << std::endl;
+        std::cout << "  j " << branch.true_bb->name + 1 << std::endl;
     }
 }
 
