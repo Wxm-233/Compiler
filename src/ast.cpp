@@ -466,7 +466,7 @@ koopa_raw_value_data_t* BaseAST::build_binary(koopa_raw_binary_op op, koopa_raw_
     return binary;
 }
 
-static koopa_raw_value_data_t* build_get_ptr(koopa_raw_value_data_t* src, koopa_raw_value_data_t* index)
+koopa_raw_value_data_t* BaseAST::build_get_ptr(koopa_raw_value_data_t* src, koopa_raw_value_data_t* index)
 {
     auto get_ptr = new koopa_raw_value_data_t({
         .ty = src->ty,

@@ -5,43 +5,6 @@
 #include <cmath>
 #include <cstring>
 #include <map>
-// 函数声明略
-// ...
-
-//inst_reg_use regs[8];
-
-void lw_safe(std::string reg, int loc) {
-    if (loc < 2048) {
-        std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
-    } else {
-        std::cout << "  li t3, " << loc << std::endl;
-        std::cout << "  add t3, t3, sp" << std::endl;
-        std::cout << "  lw " << reg << ", 0(t3)" << std::endl;
-    }
-}
-
-void sw_safe(std::string reg, int loc) {
-    if (loc < 2048) {
-        std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
-    } else {
-        std::cout << "  li t3, " << loc << std::endl;
-        std::cout << "  add t3, t3, sp" << std::endl;
-        std::cout << "  sw " << reg << ", 0(t3)" << std::endl;
-    }
-}
-
-int array_len(const koopa_raw_type_kind* t) {
-    switch (t->tag) {
-        case KOOPA_RTT_INT32:
-            return 1;
-        case KOOPA_RTT_ARRAY:
-            return t->data.array.len * array_len(t->data.array.base);
-        case KOOPA_RTT_POINTER:
-            return 1;
-        default:
-            assert(false);
-    }
-}
 
 namespace Stack {
     int R;
@@ -83,11 +46,124 @@ namespace Stack {
                 }
                 break;
             }
-            default:
+            default: // 剩下的都是在栈上的指令
                 lw_safe(reg, Query(value));
         }
     }
 }
+
+const int n_regs = 6;
+
+struct Reg_info {
+    bool used = false;
+    int life = 0;
+    koopa_raw_value_t inst = nullptr;
+    // bool operator<(const Reg_info &rhs) const {
+    //     return life < rhs.life;
+    // }
+} reg_info[n_regs];
+
+std::map<koopa_raw_value_t, int> reg_map;
+
+std::string distribute_reg(koopa_raw_value_t inst, bool use=true) {
+    for (int i = 0; i < n_regs; i++)
+        if (reg_info[i].used)
+            reg_info[i].life++;
+    // 已经加载到寄存器中了
+    if (reg_map.find(inst) != reg_map.end()) {
+        int index = reg_map[inst];
+        reg_info[index].life = 0;
+        std::string reg = num2reg(index);
+        // std::clog << "Used " << reg << std::endl;
+        return reg;
+    }
+    // 寄存器还有空位
+    for (int i = 0; i < n_regs; i++) {
+        if (!reg_info[i].used) {
+            reg_info[i].used = true;
+            reg_info[i].life = 0;
+            reg_info[i].inst = inst;
+            reg_map[inst] = i;
+            std::string reg = num2reg(i);
+            if (use)
+                Stack::Load2reg(inst, reg);
+            // std::clog << "Allocated " << reg << " for inst " << ((inst->name == nullptr) ? std::to_string((long)(inst)) : inst->name) << std::endl;
+            return reg;
+        }
+    }
+    // 寄存器没有空位，需要选择一个寄存器替换，策略LRU
+    int max_life = -1;
+    int max_life_index = -1;
+    for (int i = 0; i < n_regs; i++) {
+        if (reg_info[i].life > max_life) {
+            max_life = reg_info[i].life;
+            max_life_index = i;
+        }
+    }
+
+    auto spilt_inst = reg_info[max_life_index].inst;
+    reg_map.erase(spilt_inst);
+
+    reg_info[max_life_index].used = true;
+    reg_info[max_life_index].life = 0;
+    reg_info[max_life_index].inst = inst;
+    reg_map[inst] = max_life_index;
+    std::string reg = num2reg(max_life_index);
+    if (use)
+        Stack::Load2reg(inst, reg);
+    // std::clog << "Allocated " << reg << " for inst " << ((inst->name == nullptr) ? std::to_string((long)(inst)) : inst->name) << std::endl;
+    return reg;
+}
+
+inline std::string num2reg(int n) {
+    if ((n >= 0) && (n < 7)) {
+        return "t" + std::to_string(n);
+    }
+    assert(false);
+}
+
+void clear_reg_info() {
+    for (int i = 0; i < n_regs; i++) {
+        reg_info[i].used = false;
+        reg_info[i].life = 0;
+        reg_info[i].inst = nullptr;
+    }
+    reg_map.clear();
+}
+
+void lw_safe(std::string reg, int loc) { // 从栈上加载到寄存器
+    if (loc < 2048) {
+        std::cout << "  lw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li t6, " << loc << std::endl;
+        std::cout << "  add t6, t6, sp" << std::endl;
+        std::cout << "  lw " << reg << ", 0(t6)" << std::endl;
+    }
+}
+
+void sw_safe(std::string reg, int loc) {
+    if (loc < 2048) {
+        std::cout << "  sw " << reg << ", " << loc << "(sp)" << std::endl;
+    } else {
+        std::cout << "  li t6, " << loc << std::endl;
+        std::cout << "  add t6, t6, sp" << std::endl;
+        std::cout << "  sw " << reg << ", 0(t6)" << std::endl;
+    }
+}
+
+int array_len(const koopa_raw_type_kind* t) {
+    switch (t->tag) {
+        case KOOPA_RTT_INT32:
+            return 1;
+        case KOOPA_RTT_ARRAY:
+            return t->data.array.len * array_len(t->data.array.base);
+        case KOOPA_RTT_POINTER:
+            return 1;
+        default:
+            assert(false);
+    }
+}
+
 
 // 访问 raw program
 void Visit(const koopa_raw_program_t &program)
@@ -190,8 +266,8 @@ void Visit(const koopa_raw_function_t &func)
         if (Stack::stack_frame_length < 2048)
             std::cout << "  addi sp, sp, " << -Stack::stack_frame_length << std::endl;
         else {
-            std::cout << "  li t0, " << -Stack::stack_frame_length << std::endl;
-            std::cout << "  add sp, sp, t0" << std::endl;
+            std::cout << "  li t6, " << -Stack::stack_frame_length << std::endl;
+            std::cout << "  add sp, sp, t6" << std::endl;
         }
     }
     if (Stack::R != 0) {
@@ -214,6 +290,7 @@ void Visit(const koopa_raw_basic_block_t &bb)
     // ...
     // 访问所有指令
     Visit(bb->insts);
+    clear_reg_info();
 }
 
 // 访问指令
@@ -241,7 +318,7 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
-        Visit(kind.data.binary);
+        Visit(kind.data.binary, value);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
         break;
@@ -251,7 +328,7 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_LOAD:
         // 访问 load 指令
-        Visit(kind.data.load);
+        Visit(kind.data.load, value);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
         break;
@@ -265,17 +342,18 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_CALL:
         // 访问 call 指令
-        Visit(kind.data.call);
+        Visit(kind.data.call, value);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
+        clear_reg_info();
         break;
     case KOOPA_RVT_GET_ELEM_PTR:
-        Visit(kind.data.get_elem_ptr);
+        Visit(kind.data.get_elem_ptr, value);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
         break;
     case KOOPA_RVT_GET_PTR:
-        Visit(kind.data.get_ptr);
+        Visit(kind.data.get_ptr, value);
         Stack::Insert(value, Stack::current_loc);
         Stack::current_loc += 4;
         break;
@@ -283,6 +361,7 @@ void Visit(const koopa_raw_value_t &value)
         // 其他类型暂时遇不到
         assert(false);
     }
+    std::cout << std::endl;
 }
 
 // 访问对应类型指令的函数定义略
@@ -293,7 +372,8 @@ void Visit(const koopa_raw_value_t &value)
 void Visit(const koopa_raw_return_t &ret)
 {
     if (ret.value != nullptr) {
-        Stack::Load2reg(ret.value, "a0");
+        std::string value = distribute_reg(ret.value);
+        std::cout << "  mv a0," << value << std::endl;
     }
     if (Stack::R != 0) {
         lw_safe("ra", Stack::stack_frame_length - 4);
@@ -302,95 +382,100 @@ void Visit(const koopa_raw_return_t &ret)
         if (Stack::stack_frame_length < 2048)
             std::cout << "  addi sp, sp, " << Stack::stack_frame_length << std::endl;
         else {
-            std::cout << "  li t0, " << Stack::stack_frame_length << std::endl;
-            std::cout << "  add sp, sp, t0" << std::endl;
+            std::cout << "  li t6, " << Stack::stack_frame_length << std::endl;
+            std::cout << "  add sp, sp, t6" << std::endl;
         }
     }
     std::cout << "  ret" << std::endl;
 }
 
 // 访问二元运算指令
-void Visit(const koopa_raw_binary_t &binary)
+void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
 {
-    Stack::Load2reg(binary.lhs, "t0");
-    Stack::Load2reg(binary.rhs, "t1");
+    std::string reg_left = distribute_reg(binary.lhs);
+    std::string reg_right = distribute_reg(binary.rhs);
+    std::string reg_value = distribute_reg(value, false);
 
     switch (binary.op) {
         case KOOPA_RBO_NOT_EQ:
-            std::cout << "  sub t0, t0, t1" << std::endl;
-            std::cout << "  snez t0, t0" << std::endl;
+            std::cout << "  sub "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
+            std::cout << "  snez " << reg_value << ", " << reg_value                            << std::endl;
             break;
         case KOOPA_RBO_EQ:
-            std::cout << "  sub t0, t0, t1" << std::endl;
-            std::cout << "  seqz t0, t0" << std::endl;
+            std::cout << "  sub "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
+            std::cout << "  seqz " << reg_value << ", " << reg_value                            << std::endl;
             break;
         case KOOPA_RBO_GT:
-            std::cout << "  sgt t0, t0, t1" << std::endl;
+            std::cout << "  sgt "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_LT:
-            std::cout << "  slt t0, t0, t1" << std::endl;
+            std::cout << "  slt "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_GE:
-            std::cout << "  slt t0, t0, t1" << std::endl;
-            std::cout << "  seqz t0, t0" << std::endl;
+            std::cout << "  slt "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
+            std::cout << "  seqz " << reg_value << ", " << reg_value                            << std::endl;
             break;
         case KOOPA_RBO_LE:
-            std::cout << "  sgt t0, t0, t1" << std::endl;
-            std::cout << "  seqz t0, t0" << std::endl;
+            std::cout << "  sgt "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
+            std::cout << "  seqz " << reg_value << ", " << reg_value                            << std::endl;
             break;
         case KOOPA_RBO_ADD:
-            std::cout << "  add t0, t0, t1" << std::endl;
+            std::cout << "  add "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_SUB:
-            std::cout << "  sub t0, t0, t1" << std::endl;
+            std::cout << "  sub "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_MUL:
-            std::cout << "  mul t0, t0, t1" << std::endl;
+            std::cout << "  mul "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_DIV:
-            std::cout << "  div t0, t0, t1" << std::endl;
+            std::cout << "  div "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_MOD:
-            std::cout << "  rem t0, t0, t1" << std::endl;
+            std::cout << "  rem "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_AND:
-            std::cout << "  and t0, t0, t1" << std::endl;
+            std::cout << "  and "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_OR:
-            std::cout << "  or t0, t0, t1" << std::endl;
+            std::cout << "  or "   << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_XOR:
-            std::cout << "  xor t0, t0, t1" << std::endl;
+            std::cout << "  xor "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_SHL:
-            std::cout << "  sll t0, t0, t1" << std::endl;
+            std::cout << "  sll "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_SHR:
-            std::cout << "  srl t0, t0, t1" << std::endl;
+            std::cout << "  srl "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         case KOOPA_RBO_SAR:
-            std::cout << "  sra t0, t0, t1" << std::endl;
+            std::cout << "  sra "  << reg_value << ", " << reg_left     << ", " << reg_right    << std::endl;
             break;
         default:
             assert(false);
     }
-    sw_safe("t0", Stack::current_loc);
+
+    sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问 store 指令
 void Visit(const koopa_raw_store_t &store)
 {
-    Stack::Load2reg(store.value, "t0");
-    Stack::Load2reg(store.dest, "t1");
-    std::cout << "  sw t0, 0(t1)" << std::endl;
+    std::string reg_value = distribute_reg(store.value);
+    std::string reg_dest  = distribute_reg(store.dest);
+
+    std::cout << "  sw " << reg_value << ", 0(" << reg_dest << ")" << std::endl;
 }
 
 // 访问 load 指令
-void Visit(const koopa_raw_load_t &load)
+void Visit(const koopa_raw_load_t &load, koopa_raw_value_t value)
 {
-    Stack::Load2reg(load.src, "t0");
-    std::cout << "  lw t0, 0(t0)" << std::endl;
-    sw_safe("t0", Stack::current_loc);
+    std::string reg_src  = distribute_reg(load.src);
+    std::string reg_dest = distribute_reg(value, false);
+
+    std::cout << "  lw " << reg_dest << ", 0(" << reg_src << ")" << std::endl;
+    sw_safe(reg_dest, Stack::current_loc);
 }
 
 // 访问global_alloc指令
@@ -421,7 +506,8 @@ void Visit(const koopa_raw_branch_t &branch)
             std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
         }
     } else {
-        Stack::Load2reg(branch.cond, "t0");
+        std::string reg_cond = distribute_reg(branch.cond);
+        // 这里就比较dirty了，因为我只用了最简单的block_arg_ref，所以就写成这个样子了（甚至其实可以更简单）
         for (int i = 0; i < branch.true_args.len; i++) {
             assert(((koopa_raw_value_data_t*)branch.true_args.buffer[i])->kind.tag == KOOPA_RVT_INTEGER);
             std::cout << "  li a" << i << ", " << ((koopa_raw_value_data_t*)branch.true_args.buffer[i])->kind.data.integer.value << std::endl;
@@ -430,7 +516,7 @@ void Visit(const koopa_raw_branch_t &branch)
             assert(((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.tag == KOOPA_RVT_INTEGER);
             std::cout << "  li a" << i << ", " << ((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.data.integer.value << std::endl;
         }
-        std::cout << "  bnez t0, j2" << branch.true_bb->name + 1 << std::endl;
+        std::cout << "  bnez " << reg_cond << ", j2" << branch.true_bb->name + 1 << std::endl;
         std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
         std::cout << "j2" << branch.true_bb->name + 1 << ":" << std::endl;
         std::cout << "  j " << branch.true_bb->name + 1 << std::endl;
@@ -441,60 +527,69 @@ void Visit(const koopa_raw_branch_t &branch)
 void Visit(const koopa_raw_jump_t &jump)
 {
     for (int i = 0; i < jump.args.len; i++) {
-        lw_safe("a" + std::to_string(i), Stack::Query((koopa_raw_value_t)jump.args.buffer[i]));
+        std::string reg_arg = distribute_reg((koopa_raw_value_t)jump.args.buffer[i]);
+        std::cout << "  mv a" << i << ", " << reg_arg << std::endl;
     }
     std::cout << "  j " << jump.target->name + 1 << std::endl;
 }
 
 // 访问call指令
-void Visit(const koopa_raw_call_t &call)
+void Visit(const koopa_raw_call_t &call, koopa_raw_value_t value)
 {
     for (int i = 0; i < call.args.len; i++) {
-        auto arg = (koopa_raw_value_t)call.args.buffer[i];
+        std::string reg_arg = distribute_reg((koopa_raw_value_t)call.args.buffer[i]);
         if (i < 8) {
-            Stack::Load2reg(arg, "a" + std::to_string(i));
+            std::cout << "  mv a" << i << ", " << reg_arg << std::endl;
         } else {
-            Stack::Load2reg(arg, "t0");
-            sw_safe("t0", 4*(i-8));
+            sw_safe(reg_arg, 4*(i-8));
         }
     }
     std::cout << "  call " << call.callee->name + 1 << std::endl;
 
-    sw_safe("a0", Stack::current_loc);
+    std::string reg_value = distribute_reg(value, false);
+    std::cout << "  mv " << reg_value << ", a0" << std::endl;
+
+    sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_elem_ptr指令
-void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr)
+void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr, koopa_raw_value_t value)
 {
-    Stack::Load2reg(get_elem_ptr.src, "t0");
-    Stack::Load2reg(get_elem_ptr.index, "t1");
+    std::string reg_src = distribute_reg(get_elem_ptr.src);
+    std::string reg_index = distribute_reg(get_elem_ptr.index);
+    std::string reg_value = distribute_reg(value, false);
+
     int multipler = 4 * array_len(get_elem_ptr.src->ty->data.pointer.base->data.array.base);
+
     if ((multipler & (multipler - 1)) == 0) { // 是2的整数次幂
         int digits = log2(multipler);
-        std::cout << "  slli t1, t1, " << digits << std::endl;
+        std::cout << "  slli " << reg_index << ", " << reg_index << ", " << digits << std::endl;
     } else {
-        std::cout << "  li t2, " << multipler << std::endl;
-        std::cout << "  mul t1, t1, t2" << std::endl;
+        std::cout << "  li " << reg_value << ", " << multipler << std::endl;
+        std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
-    std::cout << "  add t0, t0, t1" << std::endl;
-    sw_safe("t0", Stack::current_loc);
+    std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
+    sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_ptr指令
-void Visit(const koopa_raw_get_ptr_t &get_ptr)
+void Visit(const koopa_raw_get_ptr_t &get_ptr, koopa_raw_value_t value)
 {
-    Stack::Load2reg(get_ptr.src, "t0");
-    Stack::Load2reg(get_ptr.index, "t1");
+   std::string reg_src = distribute_reg(get_ptr.src);
+    std::string reg_index = distribute_reg(get_ptr.index);
+    std::string reg_value = distribute_reg(value, false);
+
     int multipler = 4 * array_len(get_ptr.src->ty->data.pointer.base);
+
     if ((multipler & (multipler - 1)) == 0) { // 是2的整数次幂
         int digits = log2(multipler);
-        std::cout << "  slli t1, t1, " << digits << std::endl;
+        std::cout << "  slli " << reg_index << ", " << reg_index << ", " << digits << std::endl;
     } else {
-        std::cout << "  li t2, " << multipler << std::endl;
-        std::cout << "  mul t1, t1, t2" << std::endl;
+        std::cout << "  li " << reg_value << ", " << multipler << std::endl;
+        std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
-    std::cout << "  add t0, t0, t1" << std::endl;
-    sw_safe("t0", Stack::current_loc);
+    std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
+    sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问aggregate指令
