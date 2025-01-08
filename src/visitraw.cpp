@@ -79,7 +79,7 @@ std::string distribute_reg(koopa_raw_value_t inst, bool use=true) {
     }
     // 寄存器还有空位
     for (int i = 0; i < n_regs; i++) {
-        if (!reg_info[i].used) {
+        if (!reg_info[i].used || reg_info[i].inst->used_by.len == 0) {
             reg_info[i].used = true;
             reg_info[i].life = 0;
             reg_info[i].inst = inst;
