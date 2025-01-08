@@ -235,19 +235,18 @@ void Visit(const koopa_raw_function_t &func)
         {
             auto inst = (koopa_raw_value_t)bb->insts.buffer[j];
             switch (inst->kind.tag) {
-            case KOOPA_RVT_CALL:
-                has_call = true;
-                extra_args_in_call = std::max(extra_args_in_call, (int)inst->kind.data.call.args.len - 8);
-                insts_on_stack += 1;
-                break;
             case KOOPA_RVT_ALLOC:
                 total_alloc_len += array_len(inst->ty->data.pointer.base);
                 break;
+            case KOOPA_RVT_CALL:
+                has_call = true;
+                extra_args_in_call = std::max(extra_args_in_call, (int)inst->kind.data.call.args.len - 8);
             case KOOPA_RVT_BINARY:
             case KOOPA_RVT_LOAD:
             case KOOPA_RVT_GET_PTR:
             case KOOPA_RVT_GET_ELEM_PTR:
-                insts_on_stack += 1;
+                if (inst->used_by.len > 0)
+                    insts_on_stack += 1;
                 break;
             default:
                 break;
@@ -307,8 +306,10 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_ALLOC:
         // 访问 alloc 指令
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
+        }
         break;
     case KOOPA_RVT_GLOBAL_ALLOC:
         // 访问 global_alloc 指令
@@ -319,8 +320,10 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
         Visit(kind.data.binary, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_STORE:
         // 访问 store 指令
@@ -329,8 +332,10 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_LOAD:
         // 访问 load 指令
         Visit(kind.data.load, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_BRANCH:
         // 访问 branch 指令
@@ -343,19 +348,25 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_CALL:
         // 访问 call 指令
         Visit(kind.data.call, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         clear_reg_info();
         break;
     case KOOPA_RVT_GET_ELEM_PTR:
         Visit(kind.data.get_elem_ptr, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_GET_PTR:
         Visit(kind.data.get_ptr, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     default:
         // 其他类型暂时遇不到
@@ -455,8 +466,8 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
         default:
             assert(false);
     }
-
-    sw_safe(reg_value, Stack::current_loc);
+    if (value->used_by.len > 0)
+        sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问 store 指令
@@ -475,7 +486,8 @@ void Visit(const koopa_raw_load_t &load, koopa_raw_value_t value)
     std::string reg_dest = distribute_reg(value, false);
 
     std::cout << "  lw " << reg_dest << ", 0(" << reg_src << ")" << std::endl;
-    sw_safe(reg_dest, Stack::current_loc);
+    if (value->used_by.len > 0)
+        sw_safe(reg_dest, Stack::current_loc);
 }
 
 // 访问global_alloc指令
@@ -549,7 +561,8 @@ void Visit(const koopa_raw_call_t &call, koopa_raw_value_t value)
     std::string reg_value = distribute_reg(value, false);
     std::cout << "  mv " << reg_value << ", a0" << std::endl;
 
-    sw_safe(reg_value, Stack::current_loc);
+    if (value->used_by.len > 0)
+        sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_elem_ptr指令
@@ -569,7 +582,8 @@ void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr, koopa_raw_value_t value
         std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
     std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
-    sw_safe(reg_value, Stack::current_loc);
+    if (value->used_by.len > 0)
+        sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_ptr指令
@@ -589,7 +603,8 @@ void Visit(const koopa_raw_get_ptr_t &get_ptr, koopa_raw_value_t value)
         std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
     std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
-    sw_safe(reg_value, Stack::current_loc);
+    if (value->used_by.len > 0)
+        sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问aggregate指令
