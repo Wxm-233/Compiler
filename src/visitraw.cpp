@@ -55,9 +55,10 @@ namespace Stack {
 const int n_regs = 6;
 
 struct Reg_info {
-    bool used = false;
+    bool active = false;
     int life = 0;
     koopa_raw_value_t inst = nullptr;
+    bool used = false;
     // bool operator<(const Reg_info &rhs) const {
     //     return life < rhs.life;
     // }
@@ -67,22 +68,24 @@ std::map<koopa_raw_value_t, int> reg_map;
 
 std::string distribute_reg(koopa_raw_value_t inst, bool use=true) {
     for (int i = 0; i < n_regs; i++)
-        if (reg_info[i].used)
+        if (reg_info[i].active)
             reg_info[i].life++;
     // 已经加载到寄存器中了
     if (reg_map.find(inst) != reg_map.end()) {
         int index = reg_map[inst];
         reg_info[index].life = 0;
+        reg_info[index].used = true;
         std::string reg = num2reg(index);
         // std::clog << "Used " << reg << std::endl;
         return reg;
     }
     // 寄存器还有空位
     for (int i = 0; i < n_regs; i++) {
-        if (!reg_info[i].used) {
-            reg_info[i].used = true;
+        if (!reg_info[i].active) {
+            reg_info[i].active = true;
             reg_info[i].life = 0;
             reg_info[i].inst = inst;
+            reg_info[i].used = use;
             reg_map[inst] = i;
             std::string reg = num2reg(i);
             if (use)
@@ -104,9 +107,23 @@ std::string distribute_reg(koopa_raw_value_t inst, bool use=true) {
     auto spilt_inst = reg_info[max_life_index].inst;
     reg_map.erase(spilt_inst);
 
-    reg_info[max_life_index].used = true;
+    switch (spilt_inst->kind.tag) {
+        case KOOPA_RVT_ALLOC:
+            break;
+        case KOOPA_RVT_GET_ELEM_PTR:
+            sw_safe(num2reg(max_life_index), Stack::Query(spilt_inst));
+            break;
+        default:
+            if (!reg_info[max_life_index].used && spilt_inst->used_by.len > 0) {
+                std::string reg = num2reg(max_life_index);
+                sw_safe(reg, Stack::Query(spilt_inst));
+            }
+    }
+
+    reg_info[max_life_index].active = true;
     reg_info[max_life_index].life = 0;
     reg_info[max_life_index].inst = inst;
+    reg_info[max_life_index].used = use;
     reg_map[inst] = max_life_index;
     std::string reg = num2reg(max_life_index);
     if (use)
@@ -124,9 +141,14 @@ inline std::string num2reg(int n) {
 
 void clear_reg_info() {
     for (int i = 0; i < n_regs; i++) {
-        reg_info[i].used = false;
+        if (reg_info[i].active && !reg_info[i].used && reg_info[i].inst->used_by.len > 0 && reg_info[i].inst->kind.tag != KOOPA_RVT_ALLOC) {
+            std::string reg = num2reg(i);
+            sw_safe(reg, Stack::Query(reg_info[i].inst));
+        }
+        reg_info[i].active = false;
         reg_info[i].life = 0;
         reg_info[i].inst = nullptr;
+        reg_info[i].used = false;
     }
     reg_map.clear();
 }
@@ -287,10 +309,14 @@ void Visit(const koopa_raw_basic_block_t &bb)
     // 执行一些其他的必要操作
     std::cout << bb->name + 1 << ":" << std::endl;
     assert(bb->params.len <= 8);
+
+    for (int i = 0; i < bb->params.len; i++) {
+        distribute_reg((koopa_raw_value_t)bb->params.buffer[i]);
+    }
+
     // ...
     // 访问所有指令
     Visit(bb->insts);
-    clear_reg_info();
 }
 
 // 访问指令
@@ -378,6 +404,7 @@ void Visit(const koopa_raw_return_t &ret)
     if (Stack::R != 0) {
         lw_safe("ra", Stack::stack_frame_length - 4);
     }
+    clear_reg_info();
     if (Stack::stack_frame_length > 0) {
         if (Stack::stack_frame_length < 2048)
             std::cout << "  addi sp, sp, " << Stack::stack_frame_length << std::endl;
@@ -456,7 +483,7 @@ void Visit(const koopa_raw_binary_t &binary, koopa_raw_value_t value)
             assert(false);
     }
 
-    sw_safe(reg_value, Stack::current_loc);
+    // sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问 store 指令
@@ -475,7 +502,7 @@ void Visit(const koopa_raw_load_t &load, koopa_raw_value_t value)
     std::string reg_dest = distribute_reg(value, false);
 
     std::cout << "  lw " << reg_dest << ", 0(" << reg_src << ")" << std::endl;
-    sw_safe(reg_dest, Stack::current_loc);
+    // sw_safe(reg_dest, Stack::current_loc);
 }
 
 // 访问global_alloc指令
@@ -516,6 +543,7 @@ void Visit(const koopa_raw_branch_t &branch)
             assert(((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.tag == KOOPA_RVT_INTEGER);
             std::cout << "  li a" << i << ", " << ((koopa_raw_value_data_t*)branch.false_args.buffer[i])->kind.data.integer.value << std::endl;
         }
+        clear_reg_info();
         std::cout << "  bnez " << reg_cond << ", j2" << branch.true_bb->name + 1 << std::endl;
         std::cout << "  j " << branch.false_bb->name + 1 << std::endl;
         std::cout << "j2" << branch.true_bb->name + 1 << ":" << std::endl;
@@ -530,6 +558,7 @@ void Visit(const koopa_raw_jump_t &jump)
         std::string reg_arg = distribute_reg((koopa_raw_value_t)jump.args.buffer[i]);
         std::cout << "  mv a" << i << ", " << reg_arg << std::endl;
     }
+    clear_reg_info();
     std::cout << "  j " << jump.target->name + 1 << std::endl;
 }
 
@@ -544,12 +573,13 @@ void Visit(const koopa_raw_call_t &call, koopa_raw_value_t value)
             sw_safe(reg_arg, 4*(i-8));
         }
     }
+    clear_reg_info();
     std::cout << "  call " << call.callee->name + 1 << std::endl;
 
     std::string reg_value = distribute_reg(value, false);
     std::cout << "  mv " << reg_value << ", a0" << std::endl;
 
-    sw_safe(reg_value, Stack::current_loc);
+    // sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_elem_ptr指令
@@ -569,7 +599,7 @@ void Visit(const koopa_raw_get_elem_ptr_t &get_elem_ptr, koopa_raw_value_t value
         std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
     std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
-    sw_safe(reg_value, Stack::current_loc);
+    // sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问get_ptr指令
@@ -589,7 +619,7 @@ void Visit(const koopa_raw_get_ptr_t &get_ptr, koopa_raw_value_t value)
         std::cout << "  mul " << reg_index << ", " << reg_index << ", " << reg_value << std::endl;
     }
     std::cout << "  add " << reg_value << ", " << reg_src << ", " << reg_index << std::endl;
-    sw_safe(reg_value, Stack::current_loc);
+    // sw_safe(reg_value, Stack::current_loc);
 }
 
 // 访问aggregate指令
