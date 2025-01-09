@@ -76,19 +76,21 @@ int main(int argc, const char *argv[])
 		// buffer[length] = '\0';
 		// std::clog << buffer << std::endl;
 
-		unsigned long length = 5000000;
-		char buffer[length];
+		size_t length;
+		koopa_dump_to_string(program, nullptr, &length);
+		length += 1;
+		char *buffer = new char[length];
 		koopa_dump_to_string(program, buffer, &length); // dump到字符串
+		buffer[length-1] = '\0';
 
-		koopa_program_t program_new;
-		koopa_error_code_t ret = koopa_parse_from_string(buffer, &program_new);
+		koopa_error_code_t ret = koopa_parse_from_string(buffer, &program);
 		assert(ret == KOOPA_EC_SUCCESS); //确保解析正确
 		// 创建一个 raw program builder, 用来构建 raw program
 		koopa_raw_program_builder_t builder = koopa_new_raw_program_builder();
 		// 将 Koopa IR 程序转换为 raw program
-		koopa_raw_program_t raw = koopa_build_raw_program(builder, program_new);
+		koopa_raw_program_t raw = koopa_build_raw_program(builder, program);
 		// 释放 Koopa IR 程序占用的内存
-		koopa_delete_program(program_new);
+		koopa_delete_program(program);
 
 		// 处理 raw program
 		// ...
