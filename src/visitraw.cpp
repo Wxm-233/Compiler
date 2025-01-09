@@ -273,19 +273,18 @@ void Visit(const koopa_raw_function_t &func)
         {
             auto inst = (koopa_raw_value_t)bb->insts.buffer[j];
             switch (inst->kind.tag) {
-            case KOOPA_RVT_CALL:
-                has_call = true;
-                extra_args_in_call = std::max(extra_args_in_call, (int)inst->kind.data.call.args.len - 8);
-                insts_on_stack += 1;
-                break;
             case KOOPA_RVT_ALLOC:
                 total_alloc_len += array_len(inst->ty->data.pointer.base);
                 break;
+            case KOOPA_RVT_CALL:
+                has_call = true;
+                extra_args_in_call = std::max(extra_args_in_call, (int)inst->kind.data.call.args.len - 8);
             case KOOPA_RVT_BINARY:
             case KOOPA_RVT_LOAD:
             case KOOPA_RVT_GET_PTR:
             case KOOPA_RVT_GET_ELEM_PTR:
-                insts_on_stack += 1;
+                if (inst->used_by.len > 0)
+                    insts_on_stack += 1;
                 break;
             default:
                 break;
@@ -349,8 +348,10 @@ void Visit(const koopa_raw_value_t &value)
         break;
     case KOOPA_RVT_ALLOC:
         // 访问 alloc 指令
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4 * array_len(value->ty->data.pointer.base);
+        }
         break;
     case KOOPA_RVT_GLOBAL_ALLOC:
         // 访问 global_alloc 指令
@@ -361,8 +362,10 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_BINARY:
         // 访问 binary 指令
         Visit(kind.data.binary, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_STORE:
         // 访问 store 指令
@@ -371,8 +374,10 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_LOAD:
         // 访问 load 指令
         Visit(kind.data.load, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_BRANCH:
         // 访问 branch 指令
@@ -385,19 +390,25 @@ void Visit(const koopa_raw_value_t &value)
     case KOOPA_RVT_CALL:
         // 访问 call 指令
         Visit(kind.data.call, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         clear_reg_info();
         break;
     case KOOPA_RVT_GET_ELEM_PTR:
         Visit(kind.data.get_elem_ptr, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     case KOOPA_RVT_GET_PTR:
         Visit(kind.data.get_ptr, value);
-        Stack::Insert(value, Stack::current_loc);
-        Stack::current_loc += 4;
+        if (value->used_by.len > 0) {
+            Stack::Insert(value, Stack::current_loc);
+            Stack::current_loc += 4;
+        }
         break;
     default:
         // 其他类型暂时遇不到
